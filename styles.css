@@ -1,0 +1,90 @@
+:root {
+  --bg-light: #f5f7fb;
+  --bg-dark: #0b0b0c;
+  --text-light: #0f172a;
+  --text-dark: #e5e7eb;
+  --accent: #6c5ce7;
+  --accent-2: #21d4fd;
+  --muted: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--text-light);
+  background: linear-gradient(135deg, var(--bg-light), #e8ecf7);
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    color: var(--text-dark);
+    background: radial-gradient(60% 60% at 10% 10%, #121316 0%, var(--bg-dark) 100%);
+  }
+}
+
+.hero {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.hero h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 2.25rem;
+  letter-spacing: -0.02em;
+}
+
+.hero p {
+  margin: 0 0 1.5rem 0;
+  color: var(--muted);
+}
+
+.input-wrap {
+  width: min(640px, 92vw);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(10px);
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .input-wrap {
+    background: rgba(17, 17, 19, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+}
+
+.input-wrap input {
+  width: 100%;
+  height: 46px;
+  font-size: 1rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+}
+
+.input-wrap input::placeholder {
+  color: var(--muted);
+}
+
+.hero h1 {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+

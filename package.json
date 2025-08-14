@@ -1,0 +1,16 @@
+{
+  "name": "turodesk",
+  "version": "0.1.0",
+  "description": "Aplicação desktop Electron - Turodesk",
+  "main": "main.js",
+  "author": "Arthur Granja",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.2.0"
+  }
+}
+
