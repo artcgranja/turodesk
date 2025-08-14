@@ -93,9 +93,9 @@ export class ChatManager {
 
 		const builder = new StateGraph<GraphState>({
 			channels: {
-				messages: { reducer: messagesStateReducer, default: [] },
-				context: { default: '' },
-				sessionId: { default: '' },
+				messages: { reducer: messagesStateReducer, default: () => [] },
+				context: { default: () => '' },
+				sessionId: { default: () => '' },
 			},
 		});
 		builder.addNode('retrieve', retrieve);
@@ -108,6 +108,15 @@ export class ChatManager {
 
 	listSessions(): ChatSessionMeta[] {
 		return [...this.sessions].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+	}
+
+	renameSession(sessionId: string, title: string): ChatSessionMeta {
+		const s = this.sessions.find((x) => x.id === sessionId);
+		if (!s) throw new Error('Sessão não encontrada');
+		s.title = title || s.title;
+		s.updatedAt = new Date().toISOString();
+		this.persistSessions();
+		return s;
 	}
 
 	createSession(title?: string): ChatSessionMeta {
@@ -147,7 +156,6 @@ export class ChatManager {
 			sessionId,
 		});
 
-		// Fallback quando não houver LLM configurado
 		if (!this.graph || !this.llm) {
 			await history.addMessage(new HumanMessage(input));
 			const fallback = 'Configure OPENAI_API_KEY para obter respostas inteligentes.';
