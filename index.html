@@ -9,19 +9,21 @@
       content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' 'unsafe-inline';"
     />
     <title>Turodesk</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./dist/styles.css" />
   </head>
   <body>
     <div id="app">
-      <div class="hero">
-        <h1>Turodesk</h1>
-        <p>Seu espaço de trabalho rápido e minimalista</p>
-        <div class="input-wrap">
-          <input type="text" placeholder="Comece a digitar..." autofocus />
+      <div class="min-h-full grid place-items-center p-8 text-slate-900 dark:text-slate-100 bg-[radial-gradient(60%_60%_at_10%_10%,#121316_0%,var(--bg-dark)_100%)] dark:bg-[radial-gradient(60%_60%_at_10%_10%,#121316_0%,var(--bg-dark)_100%)] bg-[linear-gradient(135deg,var(--bg-light),#e8ecf7)]">
+        <div class="text-center">
+          <h1 class="text-4xl font-semibold tracking-tight bg-gradient-to-r from-indigo-500 to-sky-400 bg-clip-text text-transparent">Turodesk</h1>
+          <p class="mt-1 text-slate-500 dark:text-slate-400">Seu espaço de trabalho rápido e minimalista</p>
+          <div class="mt-6 glass-panel w-[min(640px,92vw)] mx-auto px-4 py-2">
+            <input class="w-full h-12 bg-transparent outline-none text-base placeholder:text-slate-400" type="text" placeholder="Comece a digitar..." autofocus />
+          </div>
         </div>
       </div>
     </div>
-    <script src="./renderer.js"></script>
+    <script src="./dist/renderer.js"></script>
   </body>
   </html>
 

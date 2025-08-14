@@ -2,15 +2,32 @@
   "name": "turodesk",
   "version": "0.1.0",
   "description": "Aplicação desktop Electron - Turodesk",
-  "main": "main.js",
+  "main": "dist/main.js",
   "author": "Arthur Granja",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron ."
+    "clean": "rm -rf dist",
+    "build:main": "esbuild src/main.ts --platform=node --bundle --outfile=dist/main.js --external:electron --format=cjs",
+    "build:preload": "esbuild src/preload.ts --platform=node --bundle --outfile=dist/preload.js --external:electron --format=cjs",
+    "build:renderer": "esbuild src/renderer.ts --bundle --outfile=dist/renderer.js --format=iife",
+    "build:css": "tailwindcss -i ./src/styles/tailwind.css -o ./dist/styles.css --minify",
+    "build": "npm run clean && npm run build:main && npm run build:preload && npm run build:renderer && npm run build:css",
+    "dev:main": "esbuild src/main.ts --platform=node --bundle --outfile=dist/main.js --external:electron --format=cjs --watch",
+    "dev:preload": "esbuild src/preload.ts --platform=node --bundle --outfile=dist/preload.js --external:electron --format=cjs --watch",
+    "dev:renderer": "esbuild src/renderer.ts --bundle --outfile=dist/renderer.js --format=iife --watch",
+    "dev:css": "tailwindcss -i ./src/styles/tailwind.css -o ./dist/styles.css -w",
+    "dev": "concurrently -k \"npm run dev:main\" \"npm run dev:preload\" \"npm run dev:renderer\" \"npm run dev:css\" \"wait-on dist/main.js && electron .\"",
+    "start": "electron ."
   },
   "devDependencies": {
-    "electron": "^31.2.0"
+    "@types/node": "^20.19.10",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.2",
+    "electron": "^31.7.7",
+    "esbuild": "^0.21.5",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.2",
+    "wait-on": "^7.2.0"
   }
 }
-

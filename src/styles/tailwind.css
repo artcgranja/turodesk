@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-light: #f5f7fb;
+    --bg-dark: #0b0b0c;
+  }
+  html, body, #app {
+    height: 100%;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-white/60 dark:bg-neutral-900/60 backdrop-blur-md border border-black/10 dark:border-white/10 rounded-xl shadow-lg;
+  }
+}
+
+
