@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import path from 'node:path';
 import { registerIPC } from './backend/ipc';
