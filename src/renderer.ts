@@ -23,10 +23,9 @@ const state = {
 
 async function boot(): Promise<void> {
 	state.sessions = await window.turodesk.chats.list();
-	if (state.sessions.length === 0) {
-		state.mode = 'intro';
-	} else {
-		state.mode = 'chat';
+	// Sempre iniciar na tela de introdução
+	state.mode = 'intro';
+	if (state.sessions.length > 0) {
 		state.currentId = state.sessions[0].id;
 	}
 	render();
@@ -47,43 +46,18 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, 
 async function render(): Promise<void> {
 	const app = document.getElementById('app')!;
 	app.innerHTML = '';
-	if (state.mode === 'intro') return renderIntro(app);
-	return renderChat(app);
+
+	const sidebar = buildSidebar();
+	const right = h('div', { class: 'min-h-screen' });
+
+	const main = h('div', { class: 'min-h-screen grid grid-cols-[16rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, right]);
+	app.appendChild(main);
+
+	if (state.mode === 'intro') renderIntroPane(right);
+	else await renderChatPane(right);
 }
 
-function renderIntro(app: HTMLElement): void {
-	const wrap = h('div', { class: 'min-h-screen grid place-items-center p-8 bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [
-		h('div', { class: 'text-center' }, [
-			h('h1', { class: 'text-4xl font-semibold tracking-tight bg-gradient-to-r from-indigo-500 to-sky-400 bg-clip-text text-transparent' }, ['Turodesk']),
-			h('p', { class: 'mt-1 text-slate-500 dark:text-slate-400' }, ['Seu espaço de trabalho rápido e minimalista']),
-			h('form', { class: 'mt-6 w-[min(640px,92vw)] mx-auto', onsubmit: onCreateFromIntro }, [
-				h('div', { class: 'glass-panel px-4 py-2' }, [
-					h('input', { id: 'intro-input', class: 'w-full h-12 bg-transparent outline-none text-base placeholder:text-slate-400', placeholder: 'Digite sua primeira mensagem...', autofocus: true })
-				])
-			])
-		])
-	]);
-	app.appendChild(wrap);
-	(document.getElementById('intro-input') as HTMLInputElement)?.focus();
-}
-
-async function onCreateFromIntro(e: Event): Promise<void> {
-	e.preventDefault();
-	const input = document.getElementById('intro-input') as HTMLInputElement;
-	const value = input.value.trim();
-	if (!value) return;
-	const session = await window.turodesk.chats.create('Nova conversa');
-	state.sessions.unshift(session);
-	state.currentId = session.id;
-	state.mode = 'chat';
-	render();
-	const res = await window.turodesk.chats.send(session.id, value);
-	const messagesList = document.querySelector('#messages-list')!;
-	messagesList.appendChild(renderMsg('user', value));
-	messagesList.appendChild(renderMsg(res.role, res.content));
-}
-
-async function renderChat(app: HTMLElement): Promise<void> {
+function buildSidebar(): HTMLElement {
 	const sidebar = h('div', { class: 'w-64 shrink-0 border-r border-black/10 dark:border-white/10 p-3 space-y-2' });
 	const header = h('div', { class: 'flex items-center justify-between' }, [
 		h('div', { class: 'font-medium text-sm text-slate-500 dark:text-slate-400' }, ['Conversas']),
@@ -93,7 +67,7 @@ async function renderChat(app: HTMLElement): Promise<void> {
 
 	const list = h('div', { class: 'space-y-1' });
 	state.sessions.forEach((s) => {
-		const active = s.id === state.currentId;
+		const active = s.id === state.currentId && state.mode === 'chat';
 		const item = h('div', { class: `group flex items-center justify-between px-2 py-1 rounded-md ${active ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300' : 'hover:bg-black/5 dark:hover:bg-white/5'}` });
 		const btn = h('button', { class: 'text-left flex-1', onclick: () => onSelect(s.id) }, [s.title]);
 		const actions = h('div', { class: 'opacity-0 group-hover:opacity-100 transition-opacity flex gap-1' }, [
@@ -105,21 +79,38 @@ async function renderChat(app: HTMLElement): Promise<void> {
 		list.appendChild(item);
 	});
 	sidebar.appendChild(list);
+	return sidebar;
+}
 
-	const messagesWrap = h('div', { class: 'flex-1 grid grid-rows-[1fr_auto]' });
+function renderIntroPane(parent: HTMLElement): void {
+	const wrap = h('div', { class: 'min-h-screen grid place-items-center p-8' }, [
+		h('div', { class: 'text-center' }, [
+			h('h1', { class: 'text-4xl font-semibold tracking-tight bg-gradient-to-r from-indigo-500 to-sky-400 bg-clip-text text-transparent' }, ['Turodesk']),
+			h('p', { class: 'mt-1 text-slate-500 dark:text-slate-400' }, ['Seu espaço de trabalho rápido e minimalista']),
+			h('form', { class: 'mt-6 w-[min(640px,92vw)] mx-auto', onsubmit: onCreateFromIntro }, [
+				h('div', { class: 'glass-panel px-4 py-2' }, [
+					h('input', { id: 'intro-input', class: 'w-full h-12 bg-transparent outline-none text-base placeholder:text-slate-400', placeholder: 'Digite sua primeira mensagem...', autofocus: true })
+				])
+			])
+		])
+	]);
+	parent.appendChild(wrap);
+	(document.getElementById('intro-input') as HTMLInputElement)?.focus();
+}
+
+async function renderChatPane(parent: HTMLElement): Promise<void> {
+	const messagesWrap = h('div', { class: 'min-h-screen grid grid-rows-[1fr_auto]' });
 	const messagesList = h('div', { id: 'messages-list', class: 'p-4 overflow-auto space-y-3' });
 	const inputRow = h('form', { class: 'p-3 border-t border-black/10 dark:border-white/10 grid grid-cols-[1fr_auto] gap-2', onsubmit: onSend }, [
 		h('input', { id: 'msg', class: 'h-11 px-3 rounded-md bg-white/60 dark:bg-neutral-900/60 outline-none', placeholder: 'Digite sua mensagem...' }),
 		h('button', { class: 'px-4 rounded-md bg-indigo-600 text-white' }, ['Enviar'])
 	]);
 
-	const main = h('div', { class: 'min-h-screen grid grid-cols-[16rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, messagesWrap]);
-	app.appendChild(main);
-
 	const msgs = await window.turodesk.chats.messages(state.currentId);
 	msgs.forEach((m) => messagesList.appendChild(renderMsg(m.role, m.content)));
 	messagesWrap.appendChild(messagesList);
 	messagesWrap.appendChild(inputRow);
+	parent.appendChild(messagesWrap);
 }
 
 function renderMsg(role: 'user' | 'assistant' | 'system', content: string): HTMLElement {
@@ -137,6 +128,22 @@ async function onSelect(id: string): Promise<void> {
 	state.currentId = id;
 	state.mode = 'chat';
 	render();
+}
+
+async function onCreateFromIntro(e: Event): Promise<void> {
+	e.preventDefault();
+	const input = document.getElementById('intro-input') as HTMLInputElement;
+	const value = input.value.trim();
+	if (!value) return;
+	const session = await window.turodesk.chats.create('Nova conversa');
+	state.sessions.unshift(session);
+	state.currentId = session.id;
+	state.mode = 'chat';
+	render();
+	const res = await window.turodesk.chats.send(session.id, value);
+	const messagesList = document.querySelector('#messages-list')!;
+	messagesList.appendChild(renderMsg('user', value));
+	messagesList.appendChild(renderMsg(res.role, res.content));
 }
 
 async function onSend(e: Event): Promise<void> {
