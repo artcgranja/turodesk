@@ -23,10 +23,12 @@ Isto abrirá uma janela com a tela inicial contendo um campo de texto centraliza
 Pré-requisitos: Docker e Docker Compose.
 
 1. Configure variáveis (opcional): copie `.env.example` para `.env` e ajuste conforme necessário.
-2. Suba o container:
+2. Suba o container (usa 5432 por padrão; se estiver em uso, rode com `POSTGRES_PORT=5433`):
 
 ```bash
 docker compose up -d
+# ou
+POSTGRES_PORT=5433 docker compose up -d
 ```
 
 3. Verifique o status:
