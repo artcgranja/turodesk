@@ -34,6 +34,7 @@
     "@langchain/community": "^0.3.50",
     "@langchain/core": "^0.3.70",
     "@langchain/openai": "^0.6.7",
+    "@langchain/langgraph": "^0.2.38",
     "uuid": "^11.1.0"
   }
 }
