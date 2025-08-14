@@ -34,11 +34,9 @@ const state = {
 async function boot(): Promise<void> {
 	state.sessions = await window.turodesk.chats.list();
 	state.mode = 'intro';
-	if (state.sessions.length > 0) {
-		state.currentId = state.sessions[0].id;
-	}
+	if (state.sessions.length > 0) state.currentId = state.sessions[0].id;
 	bindStreamEventsOnce();
-	render();
+	await render();
 }
 
 function bindStreamEventsOnce(): void {
@@ -49,6 +47,7 @@ function bindStreamEventsOnce(): void {
 		if (!el) return;
 		el.textContent = (el.textContent || '') + token;
 		renderMarkdownInto(el);
+		attachCopyButtons(el);
 		const list = document.getElementById('messages-list');
 		if (list) list.scrollTop = list.scrollHeight;
 	});
@@ -86,8 +85,11 @@ async function render(): Promise<void> {
 	const main = h('div', { class: 'h-[calc(100vh-2rem)] grid grid-cols-[16rem_1fr] md:grid-cols-[18rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, right]);
 	app.appendChild(main);
 
-	if (state.mode === 'intro') renderIntroPane(right);
-	else await renderChatPane(right);
+	if (state.mode === 'intro') {
+		renderIntroPane(right);
+	} else {
+		await renderChatPane(right);
+	}
 }
 
 function buildSidebar(): HTMLElement {
@@ -106,7 +108,7 @@ function buildSidebar(): HTMLElement {
 	const filtered = state.sessions.filter((s) => s.title.toLowerCase().includes(state.search.toLowerCase()));
 	filtered.forEach((s) => {
 		const active = s.id === state.currentId && state.mode === 'chat';
-		const item = h('div', { class: `group flex items-center justify-between px-2 py-2 rounded-lg ${active ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300' : 'hover:bg-black/5 dark:hover:bg-white/5'}` });
+		const item = h('div', { class: `group flex items-center justify-between px-3 py-2 rounded-xl ${active ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300' : 'hover:bg-black/5 dark:hover:bg-white/5'}` });
 		const textBox = h('div', { class: 'min-w-0 flex-1' }, [
 			h('button', { class: 'text-left truncate w-full', onclick: () => onSelect(s.id) }, [s.title]),
 			h('div', { class: 'text-[11px] text-slate-400 mt-0.5' }, [formatShortDate(s.updatedAt)])
@@ -138,10 +140,10 @@ function formatShortDate(iso: string): string { try { const d = new Date(iso); r
 
 function renderIntroPane(parent: HTMLElement): void {
 	const wrap = h('div', { class: 'h-full grid place-items-center p-8' }, [
-		h('div', { class: 'text-center' }, [
+		h('div', { class: 'text-center chat-container' }, [
 			h('h1', { class: 'text-4xl font-semibold tracking-tight bg-gradient-to-r from-indigo-500 to-sky-400 bg-clip-text text-transparent' }, ['Turodesk']),
 			h('p', { class: 'mt-1 text-slate-500 dark:text-slate-400' }, ['Seu espaço de trabalho rápido e minimalista']),
-			h('form', { class: 'mt-6 w-[min(640px,92vw)] mx-auto', onsubmit: onCreateFromIntro }, [
+			h('form', { class: 'mt-6 w-[min(680px,92vw)] mx-auto', onsubmit: onCreateFromIntro }, [
 				h('div', { class: 'glass-panel px-4 py-2' }, [
 					h('input', { id: 'intro-input', class: 'w-full h-12 bg-transparent outline-none text-base placeholder:text-slate-400', placeholder: 'Digite sua primeira mensagem...', autofocus: true })
 				])
@@ -154,10 +156,10 @@ function renderIntroPane(parent: HTMLElement): void {
 
 async function renderChatPane(parent: HTMLElement): Promise<void> {
 	const messagesWrap = h('div', { class: 'h-full grid grid-rows-[1fr_auto] overflow-hidden' });
-	const messagesList = h('div', { id: 'messages-list', class: 'p-4 overflow-auto space-y-3' });
-	const inputRow = h('form', { class: 'p-3 border-t border-black/10 dark:border-white/10 grid grid-cols-[1fr_auto] gap-2', onsubmit: onSend }, [
-		h('input', { id: 'msg', class: 'h-11 px-3 rounded-md bg-white/60 dark:bg-neutral-900/60 outline-none', placeholder: 'Digite sua mensagem...' }),
-		h('button', { class: 'px-4 rounded-md bg-indigo-600 text-white' }, ['Enviar'])
+	const messagesList = h('div', { id: 'messages-list', class: 'p-6 overflow-auto space-y-4 chat-container' });
+	const inputRow = h('form', { class: 'p-4 border-t border-black/10 dark:border-white/10 grid grid-cols-[1fr_auto] gap-2 chat-container', onsubmit: onSend }, [
+		h('input', { id: 'msg', class: 'h-12 px-4 rounded-xl bg-white/70 dark:bg-neutral-900/70 outline-none', placeholder: 'Digite sua mensagem...' }),
+		h('button', { class: 'px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 active:scale-[.99] transition' }, ['Enviar'])
 	]);
 
 	const msgs = await window.turodesk.chats.messages(state.currentId);
@@ -167,15 +169,25 @@ async function renderChatPane(parent: HTMLElement): Promise<void> {
 	parent.appendChild(messagesWrap);
 }
 
+function attachCopyButtons(scope: Element | Document = document): void {
+	scope.querySelectorAll('pre').forEach((pre) => {
+		if (pre.querySelector('.code-copy-btn')) return;
+		const btn = h('button', { class: 'code-copy-btn', onclick: () => navigator.clipboard.writeText(pre.textContent || '') }, ['Copiar']);
+		pre.style.position = 'relative';
+		pre.appendChild(btn);
+	});
+}
+
 function renderMarkdownInto(el: Element): void {
 	const raw = el.textContent || '';
 	const html = DOMPurify.sanitize(marked.parse(raw) as string);
 	(el as HTMLElement).innerHTML = html;
+	attachCopyButtons(el);
 }
 
 function renderMsg(role: 'user' | 'assistant' | 'system', content: string): HTMLElement {
-	const base = 'px-3 py-2 rounded-lg max-w-[72ch] prose prose-slate dark:prose-invert';
-	const cls = role === 'user' ? 'bg-indigo-600 text-white ml-auto prose-invert' : role === 'assistant' ? 'bg-black/5 dark:bg-white/10' : 'bg-amber-100 text-amber-900';
+	const base = 'msg-bubble';
+	const cls = role === 'user' ? 'msg-user ml-auto' : role === 'assistant' ? 'msg-assistant' : 'bg-amber-100 text-amber-900';
 	const el = h('div', { class: `${base} ${cls}` }, []);
 	if (role === 'assistant') {
 		el.setAttribute('id', 'assistant-stream');
@@ -187,9 +199,9 @@ function renderMsg(role: 'user' | 'assistant' | 'system', content: string): HTML
 	return el;
 }
 
-async function onNewChat(): Promise<void> { state.mode = 'intro'; render(); }
-async function onSelect(id: string): Promise<void> { state.currentId = id; state.mode = 'chat'; render(); }
-function onSearchChange(e: Event): void { state.search = (e.target as HTMLInputElement).value; render(); }
+async function onNewChat(): Promise<void> { state.mode = 'intro'; await render(); }
+async function onSelect(id: string): Promise<void> { state.currentId = id; state.mode = 'chat'; await render(); }
+function onSearchChange(e: Event): void { state.search = (e.target as HTMLInputElement).value; void render(); }
 
 async function onCreateFromIntro(e: Event): Promise<void> {
 	e.preventDefault();
@@ -200,11 +212,12 @@ async function onCreateFromIntro(e: Event): Promise<void> {
 	state.sessions.unshift(session);
 	state.currentId = session.id;
 	state.mode = 'chat';
-	render();
-	const messagesList = document.querySelector('#messages-list')!;
-	messagesList.appendChild(renderMsg('user', value));
-	messagesList.appendChild(renderMsg('assistant', ''));
-	messagesList.scrollTop = messagesList.scrollHeight;
+	await render();
+	const list = document.getElementById('messages-list');
+	if (!list) return; // segurança
+	list.appendChild(renderMsg('user', value));
+	list.appendChild(renderMsg('assistant', ''));
+	list.scrollTop = list.scrollHeight;
 	await window.turodesk.chats.sendStream(session.id, value);
 }
 
@@ -213,11 +226,11 @@ async function onSend(e: Event): Promise<void> {
 	const input = (document.getElementById('msg') as HTMLInputElement);
 	const value = input.value.trim();
 	if (!value) return;
-	const messagesList = document.getElementById('messages-list')!;
-	messagesList.appendChild(renderMsg('user', value));
+	const list = document.getElementById('messages-list')!;
+	list.appendChild(renderMsg('user', value));
 	input.value = '';
-	messagesList.appendChild(renderMsg('assistant', ''));
-	messagesList.scrollTop = messagesList.scrollHeight;
+	list.appendChild(renderMsg('assistant', ''));
+	list.scrollTop = list.scrollHeight;
 	await window.turodesk.chats.sendStream(state.currentId, value);
 }
 
@@ -245,6 +258,6 @@ async function onRename(id: string): Promise<void> {
 	render();
 }
 
-window.addEventListener('DOMContentLoaded', () => { boot().catch((err) => console.error(err)); });
+window.addEventListener('DOMContentLoaded', () => { void boot(); });
 
 

@@ -220,22 +220,17 @@ export class ChatManager {
 			['system', 'Contexto (memória longa): {context}'],
 			new MessagesPlaceholder('messages'),
 		]);
-		const chain = prompt.pipe(this.llm);
-
+		// Formatar mensagens e usar stream no LLM diretamente (tokens reais)
+		const formatted = await prompt.formatMessages({ context: retrieved, messages: [...prev, new HumanMessage(input)] });
 		let finalText = '';
-		await chain.invoke(
-			{ context: retrieved, messages: [...prev, new HumanMessage(input)] },
-			{
-				callbacks: [
-					{
-						handleLLMNewToken: async (token: string) => {
-							finalText += token;
-							onToken(token);
-						},
-					},
-				],
+		const stream = await this.llm.stream(formatted);
+		for await (const chunk of stream) {
+			const piece = typeof (chunk as any).content === 'string' ? (chunk as any).content : '';
+			if (piece) {
+				finalText += piece;
+				onToken(piece);
 			}
-		);
+		}
 
 		await history.addMessage(new HumanMessage(input));
 		await history.addMessage(new AIMessage(finalText));
