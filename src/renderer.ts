@@ -49,6 +49,8 @@ function bindStreamEventsOnce(): void {
 		if (!el) return;
 		el.textContent = (el.textContent || '') + token;
 		renderMarkdownInto(el);
+		const list = document.getElementById('messages-list');
+		if (list) list.scrollTop = list.scrollHeight;
 	});
 	window.turodesk.chats.onDone(({ id }) => {
 		if (id !== state.currentId) return;
@@ -79,9 +81,9 @@ async function render(): Promise<void> {
 	app.appendChild(dragBar);
 
 	const sidebar = buildSidebar();
-	const right = h('div', { class: 'min-h-screen' });
+	const right = h('div', { class: 'h-full overflow-hidden' });
 
-	const main = h('div', { class: 'min-h-screen pt-8 grid grid-cols-[16rem_1fr] md:grid-cols-[18rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, right]);
+	const main = h('div', { class: 'h-[calc(100vh-2rem)] grid grid-cols-[16rem_1fr] md:grid-cols-[18rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, right]);
 	app.appendChild(main);
 
 	if (state.mode === 'intro') renderIntroPane(right);
@@ -89,7 +91,7 @@ async function render(): Promise<void> {
 }
 
 function buildSidebar(): HTMLElement {
-	const sidebar = h('div', { class: 'w-64 md:w-72 shrink-0 border-r border-black/10 dark:border-white/10 p-3 space-y-3 overflow-y-auto' });
+	const sidebar = h('div', { class: 'w-64 md:w-72 h-full shrink-0 border-r border-black/10 dark:border-white/10 p-3 space-y-3 overflow-y-auto' });
 	const header = h('div', { class: 'flex items-center justify-between' }, [
 		h('div', { class: 'font-medium text-sm text-slate-500 dark:text-slate-400' }, ['Conversas']),
 		h('button', { class: 'px-2 py-1 rounded-md bg-indigo-500 text-white text-sm hover:bg-indigo-600 active:scale-[.99] transition', onclick: onNewChat, title: 'Novo chat (N)' }, ['Novo']),
@@ -135,7 +137,7 @@ function svgTrash(): HTMLElement { const el = document.createElementNS('http://w
 function formatShortDate(iso: string): string { try { const d = new Date(iso); return d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }); } catch { return ''; } }
 
 function renderIntroPane(parent: HTMLElement): void {
-	const wrap = h('div', { class: 'min-h-screen grid place-items-center p-8' }, [
+	const wrap = h('div', { class: 'h-full grid place-items-center p-8' }, [
 		h('div', { class: 'text-center' }, [
 			h('h1', { class: 'text-4xl font-semibold tracking-tight bg-gradient-to-r from-indigo-500 to-sky-400 bg-clip-text text-transparent' }, ['Turodesk']),
 			h('p', { class: 'mt-1 text-slate-500 dark:text-slate-400' }, ['Seu espaço de trabalho rápido e minimalista']),
@@ -151,7 +153,7 @@ function renderIntroPane(parent: HTMLElement): void {
 }
 
 async function renderChatPane(parent: HTMLElement): Promise<void> {
-	const messagesWrap = h('div', { class: 'min-h-screen grid grid-rows-[1fr_auto]' });
+	const messagesWrap = h('div', { class: 'h-full grid grid-rows-[1fr_auto] overflow-hidden' });
 	const messagesList = h('div', { id: 'messages-list', class: 'p-4 overflow-auto space-y-3' });
 	const inputRow = h('form', { class: 'p-3 border-t border-black/10 dark:border-white/10 grid grid-cols-[1fr_auto] gap-2', onsubmit: onSend }, [
 		h('input', { id: 'msg', class: 'h-11 px-3 rounded-md bg-white/60 dark:bg-neutral-900/60 outline-none', placeholder: 'Digite sua mensagem...' }),
@@ -202,6 +204,7 @@ async function onCreateFromIntro(e: Event): Promise<void> {
 	const messagesList = document.querySelector('#messages-list')!;
 	messagesList.appendChild(renderMsg('user', value));
 	messagesList.appendChild(renderMsg('assistant', ''));
+	messagesList.scrollTop = messagesList.scrollHeight;
 	await window.turodesk.chats.sendStream(session.id, value);
 }
 
@@ -214,6 +217,7 @@ async function onSend(e: Event): Promise<void> {
 	messagesList.appendChild(renderMsg('user', value));
 	input.value = '';
 	messagesList.appendChild(renderMsg('assistant', ''));
+	messagesList.scrollTop = messagesList.scrollHeight;
 	await window.turodesk.chats.sendStream(state.currentId, value);
 }
 
