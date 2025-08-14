@@ -1,5 +1,6 @@
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import path from 'node:path';
+import { registerIPC } from './backend/ipc';
 
 function createMainWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -26,6 +27,7 @@ function createMainWindow(): void {
 }
 
 app.whenReady().then((): void => {
+  registerIPC();
   createMainWindow();
 
   app.on('activate', () => {
