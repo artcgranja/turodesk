@@ -33,9 +33,13 @@
   "dependencies": {
     "@langchain/community": "^0.3.50",
     "@langchain/core": "^0.3.70",
-    "@langchain/openai": "^0.6.7",
     "@langchain/langgraph": "^0.2.38",
+    "@langchain/openai": "^0.6.7",
+    "@tailwindcss/typography": "^0.5.16",
+    "dompurify": "^3.2.6",
     "dotenv": "^16.4.5",
+    "jsdom": "^26.1.0",
+    "marked": "^16.1.2",
     "uuid": "^11.1.0"
   }
 }

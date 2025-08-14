@@ -190,6 +190,74 @@ export class ChatManager {
 		return { role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() };
 	}
 
+	async sendMessageStream(
+		sessionId: string,
+		input: string,
+		onToken: (token: string) => void
+	): Promise<ChatMessage> {
+		const session = this.sessions.find((s) => s.id === sessionId);
+		if (!session) throw new Error('Sessão não encontrada');
+		if (!this.llm) {
+			onToken('Configure OPENAI_API_KEY para obter respostas inteligentes.');
+			return { role: 'assistant', content: 'Configure OPENAI_API_KEY para obter respostas inteligentes.', createdAt: new Date().toISOString() };
+		}
+
+		const history = new FileSystemChatMessageHistory({
+			basePath: path.dirname(this.historyPath(sessionId)),
+			sessionId,
+		});
+		const prev: BaseMessage[] = await history.getMessages();
+
+		let retrieved = '';
+		if (this.embeddings) {
+			const queryEmbedding = await this.embeddings.embedQuery(input);
+			const top = this.embeddingStore.query(queryEmbedding, 5, (r) => (r.metadata as any)?.sessionId === sessionId);
+			if (top.length) retrieved = top.map((t) => `- ${t.text}`).join('\n');
+		}
+
+		const prompt = ChatPromptTemplate.fromMessages([
+			['system', 'Você é um assistente no app Turodesk. Seja conciso e útil.'],
+			['system', 'Contexto (memória longa): {context}'],
+			new MessagesPlaceholder('messages'),
+		]);
+		const chain = prompt.pipe(this.llm);
+
+		let finalText = '';
+		await chain.invoke(
+			{ context: retrieved, messages: [...prev, new HumanMessage(input)] },
+			{
+				callbacks: [
+					{
+						handleLLMNewToken: async (token: string) => {
+							finalText += token;
+							onToken(token);
+						},
+					},
+				],
+			}
+		);
+
+		await history.addMessage(new HumanMessage(input));
+		await history.addMessage(new AIMessage(finalText));
+
+		if (this.embeddings) {
+			const textToStore = `${input}\n\nResposta: ${finalText}`;
+			const embedding = await this.embeddings.embedQuery(textToStore);
+			this.embeddingStore.add({
+				id: uuidv4(),
+				text: textToStore,
+				embedding,
+				metadata: { sessionId },
+				createdAt: new Date().toISOString(),
+			});
+		}
+
+		session.updatedAt = new Date().toISOString();
+		this.persistSessions();
+
+		return { role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
+	}
+
 	private historyPath(sessionId: string): string {
 		const base = path.join(userDataPath(), 'turodesk', 'history');
 		ensureDir(base);

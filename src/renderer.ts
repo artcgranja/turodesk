@@ -10,26 +10,52 @@ declare global {
 				rename: (id: string, title: string) => Promise<ChatSessionMeta>;
 				messages: (id: string) => Promise<Array<{ role: 'user' | 'assistant' | 'system'; content: string; createdAt: string }>>;
 				send: (id: string, input: string) => Promise<{ role: 'assistant' | 'system' | 'user'; content: string; createdAt: string }>;
+				sendStream: (id: string, input: string) => Promise<{ role: 'assistant' | 'system' | 'user'; content: string; createdAt: string }>;
+				onToken: (handler: (data: { id: string; token: string }) => void) => void;
+				onDone: (handler: (data: { id: string; full: string }) => void) => void;
+				offToken: (handler: (data: { id: string; token: string }) => void) => void;
+				offDone: (handler: (data: { id: string; full: string }) => void) => void;
 			};
 		};
 	}
 }
+
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const state = {
 	currentId: '' as string,
 	sessions: [] as ChatSessionMeta[],
 	mode: 'intro' as 'intro' | 'chat',
 	search: '' as string,
+	subscriptionsBound: false,
 };
 
 async function boot(): Promise<void> {
 	state.sessions = await window.turodesk.chats.list();
-	// Sempre iniciar na tela de introdução
 	state.mode = 'intro';
 	if (state.sessions.length > 0) {
 		state.currentId = state.sessions[0].id;
 	}
+	bindStreamEventsOnce();
 	render();
+}
+
+function bindStreamEventsOnce(): void {
+	if (state.subscriptionsBound) return;
+	window.turodesk.chats.onToken(({ id, token }) => {
+		if (id !== state.currentId) return;
+		const el = document.getElementById('assistant-stream');
+		if (!el) return;
+		el.textContent = (el.textContent || '') + token;
+		renderMarkdownInto(el);
+	});
+	window.turodesk.chats.onDone(({ id }) => {
+		if (id !== state.currentId) return;
+		const el = document.getElementById('assistant-stream');
+		if (el) el.removeAttribute('id');
+	});
+	state.subscriptionsBound = true;
 }
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, children: (Node | string)[] = []): HTMLElementTagNameMap[K] {
@@ -49,14 +75,12 @@ async function render(): Promise<void> {
 	const app = document.getElementById('app')!;
 	app.innerHTML = '';
 
-	// Barra superior arrastável para não cobrir os controles do macOS e permitir mover a janela
 	const dragBar = h('div', { class: 'fixed top-0 left-0 right-0 h-8 z-20', style: '-webkit-app-region: drag;' });
 	app.appendChild(dragBar);
 
 	const sidebar = buildSidebar();
 	const right = h('div', { class: 'min-h-screen' });
 
-	// pt-8 para evitar sobreposição sob a barra de título
 	const main = h('div', { class: 'min-h-screen pt-8 grid grid-cols-[16rem_1fr] md:grid-cols-[18rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, right]);
 	app.appendChild(main);
 
@@ -104,59 +128,11 @@ function iconBtn(icon: HTMLElement, onclick: () => void, title?: string): HTMLEl
 	return h('button', { class: 'p-1.5 rounded-md bg-slate-200/70 dark:bg-neutral-800/70 hover:bg-slate-200 dark:hover:bg-neutral-700 transition', onclick, title }, [icon]);
 }
 
-function svgSearch(): HTMLElement {
-	const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-	el.setAttribute('viewBox', '0 0 24 24');
-	el.setAttribute('fill', 'none');
-	el.setAttribute('stroke', 'currentColor');
-	el.setAttribute('class', 'w-4 h-4');
-	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-	path.setAttribute('stroke-linecap', 'round');
-	path.setAttribute('stroke-linejoin', 'round');
-	path.setAttribute('stroke-width', '2');
-	path.setAttribute('d', 'M21 21l-4.35-4.35M10 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z');
-	el.appendChild(path);
-	return el as unknown as HTMLElement;
-}
+function svgSearch(): HTMLElement { const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); el.setAttribute('viewBox', '0 0 24 24'); el.setAttribute('fill', 'none'); el.setAttribute('stroke', 'currentColor'); el.setAttribute('class', 'w-4 h-4'); const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round'); path.setAttribute('stroke-width', '2'); path.setAttribute('d', 'M21 21l-4.35-4.35M10 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z'); el.appendChild(path); return el as unknown as HTMLElement; }
+function svgEdit(): HTMLElement { const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); el.setAttribute('viewBox', '0 0 24 24'); el.setAttribute('fill', 'none'); el.setAttribute('stroke', 'currentColor'); el.setAttribute('class', 'w-4 h-4'); const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round'); path.setAttribute('stroke-width', '2'); path.setAttribute('d', 'M11 4h2m-9 9l-1 4 4-1 10-10a2.828 2.828 0 1 0-4-4L3 12z'); el.appendChild(path); return el as unknown as HTMLElement; }
+function svgTrash(): HTMLElement { const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); el.setAttribute('viewBox', '0 0 24 24'); el.setAttribute('fill', 'none'); el.setAttribute('stroke', 'currentColor'); el.setAttribute('class', 'w-4 h-4'); const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round'); path.setAttribute('stroke-width', '2'); path.setAttribute('d', 'M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1'); el.appendChild(path); return el as unknown as HTMLElement; }
 
-function svgEdit(): HTMLElement {
-	const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-	el.setAttribute('viewBox', '0 0 24 24');
-	el.setAttribute('fill', 'none');
-	el.setAttribute('stroke', 'currentColor');
-	el.setAttribute('class', 'w-4 h-4');
-	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-	path.setAttribute('stroke-linecap', 'round');
-	path.setAttribute('stroke-linejoin', 'round');
-	path.setAttribute('stroke-width', '2');
-	path.setAttribute('d', 'M11 4h2m-9 9l-1 4 4-1 10-10a2.828 2.828 0 1 0-4-4L3 12z');
-	el.appendChild(path);
-	return el as unknown as HTMLElement;
-}
-
-function svgTrash(): HTMLElement {
-	const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-	el.setAttribute('viewBox', '0 0 24 24');
-	el.setAttribute('fill', 'none');
-	el.setAttribute('stroke', 'currentColor');
-	el.setAttribute('class', 'w-4 h-4');
-	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-	path.setAttribute('stroke-linecap', 'round');
-	path.setAttribute('stroke-linejoin', 'round');
-	path.setAttribute('stroke-width', '2');
-	path.setAttribute('d', 'M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1');
-	el.appendChild(path);
-	return el as unknown as HTMLElement;
-}
-
-function formatShortDate(iso: string): string {
-	try {
-		const d = new Date(iso);
-		return d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
-	} catch {
-		return '';
-	}
-}
+function formatShortDate(iso: string): string { try { const d = new Date(iso); return d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }); } catch { return ''; } }
 
 function renderIntroPane(parent: HTMLElement): void {
 	const wrap = h('div', { class: 'min-h-screen grid place-items-center p-8' }, [
@@ -189,27 +165,29 @@ async function renderChatPane(parent: HTMLElement): Promise<void> {
 	parent.appendChild(messagesWrap);
 }
 
+function renderMarkdownInto(el: Element): void {
+	const raw = el.textContent || '';
+	const html = DOMPurify.sanitize(marked.parse(raw) as string);
+	(el as HTMLElement).innerHTML = html;
+}
+
 function renderMsg(role: 'user' | 'assistant' | 'system', content: string): HTMLElement {
-	const base = 'px-3 py-2 rounded-lg max-w-[72ch]';
-	const cls = role === 'user' ? 'bg-indigo-600 text-white ml-auto' : role === 'assistant' ? 'bg-black/5 dark:bg-white/10' : 'bg-amber-100 text-amber-900';
-	return h('div', { class: `${base} ${cls}` }, [content]);
+	const base = 'px-3 py-2 rounded-lg max-w-[72ch] prose prose-slate dark:prose-invert';
+	const cls = role === 'user' ? 'bg-indigo-600 text-white ml-auto prose-invert' : role === 'assistant' ? 'bg-black/5 dark:bg-white/10' : 'bg-amber-100 text-amber-900';
+	const el = h('div', { class: `${base} ${cls}` }, []);
+	if (role === 'assistant') {
+		el.setAttribute('id', 'assistant-stream');
+		el.textContent = content;
+		renderMarkdownInto(el);
+	} else {
+		el.textContent = content;
+	}
+	return el;
 }
 
-async function onNewChat(): Promise<void> {
-	state.mode = 'intro';
-	render();
-}
-
-async function onSelect(id: string): Promise<void> {
-	state.currentId = id;
-	state.mode = 'chat';
-	render();
-}
-
-function onSearchChange(e: Event): void {
-	state.search = (e.target as HTMLInputElement).value;
-	render();
-}
+async function onNewChat(): Promise<void> { state.mode = 'intro'; render(); }
+async function onSelect(id: string): Promise<void> { state.currentId = id; state.mode = 'chat'; render(); }
+function onSearchChange(e: Event): void { state.search = (e.target as HTMLInputElement).value; render(); }
 
 async function onCreateFromIntro(e: Event): Promise<void> {
 	e.preventDefault();
@@ -221,10 +199,10 @@ async function onCreateFromIntro(e: Event): Promise<void> {
 	state.currentId = session.id;
 	state.mode = 'chat';
 	render();
-	const res = await window.turodesk.chats.send(session.id, value);
 	const messagesList = document.querySelector('#messages-list')!;
 	messagesList.appendChild(renderMsg('user', value));
-	messagesList.appendChild(renderMsg(res.role, res.content));
+	messagesList.appendChild(renderMsg('assistant', ''));
+	await window.turodesk.chats.sendStream(session.id, value);
 }
 
 async function onSend(e: Event): Promise<void> {
@@ -235,8 +213,8 @@ async function onSend(e: Event): Promise<void> {
 	const messagesList = document.getElementById('messages-list')!;
 	messagesList.appendChild(renderMsg('user', value));
 	input.value = '';
-	const res = await window.turodesk.chats.send(state.currentId, value);
-	messagesList.appendChild(renderMsg(res.role, res.content));
+	messagesList.appendChild(renderMsg('assistant', ''));
+	await window.turodesk.chats.sendStream(state.currentId, value);
 }
 
 async function onDelete(id: string): Promise<void> {
@@ -263,8 +241,6 @@ async function onRename(id: string): Promise<void> {
 	render();
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-	boot().catch((err) => console.error(err));
-});
+window.addEventListener('DOMContentLoaded', () => { boot().catch((err) => console.error(err)); });
 
 

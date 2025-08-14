@@ -5,9 +5,18 @@ module.exports = {
     "./src/**/*.{ts,tsx,js,jsx,html}"
   ],
   theme: {
-    extend: {}
+    extend: {
+      typography: {
+        DEFAULT: {
+          css: {
+            pre: { backgroundColor: 'rgba(0,0,0,0.06)' },
+            code: { backgroundColor: 'rgba(0,0,0,0.06)', padding: '0.2rem 0.35rem', borderRadius: '0.25rem' },
+          }
+        }
+      }
+    }
   },
-  plugins: []
+  plugins: [require('@tailwindcss/typography')]
 };
 
 
