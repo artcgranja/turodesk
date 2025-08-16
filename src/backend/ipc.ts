@@ -11,10 +11,7 @@ export function registerIPC(): void {
 	ipcMain.handle('chats:messages', (_e, id: string) => manager.getMessages(id));
 	ipcMain.handle('chats:send', async (_e, id: string, input: string) => manager.sendMessage(id, input));
 
-	// User memory maintenance
-	ipcMain.handle('mem:listFacts', async () => manager.listUserFacts());
-	ipcMain.handle('mem:upsertFact', async (_e, key: string, content: string, tags?: string[]) => manager.upsertUserFact(key, content, tags));
-	ipcMain.handle('mem:deleteFact', async (_e, key: string) => manager.deleteUserFact(key));
+	// User memory APIs removidas
 
 	ipcMain.handle('chats:sendStream', async (e, id: string, input: string) => {
 		const wc: WebContents | undefined = e?.sender;

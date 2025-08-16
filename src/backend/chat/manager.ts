@@ -10,11 +10,9 @@ import { createAgent } from '../agent';
 import { getSystemPrompt } from '../agent/systemPrompt';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { buildMemoryTools } from '../tools/memoryTools';
-import pg from 'pg';
-import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { MemorySaver } from '@langchain/langgraph-checkpoint';
 import type { ChatMessage, ChatSessionMeta } from './types';
-import { LongTermMemory } from '../memory/longTerm';
+// Long-term memory removida
 
 function userDataPath(): string {
 	return app.getPath('userData');
@@ -36,8 +34,7 @@ export class ChatManager {
 	private graph: any | null = null;
 	private agent: any | null = null;
 	private tools: DynamicStructuredTool[] = [];
-	private checkpointer: PostgresSaver | MemorySaver;
-	private longTerm: LongTermMemory | null = null;
+	private checkpointer: MemorySaver;
 
 	constructor() {
 		const base = path.join(userDataPath(), 'turodesk');
@@ -65,24 +62,8 @@ export class ChatManager {
 			fs.writeFileSync(uidPath, JSON.stringify({ userId: this.userId }, null, 2), 'utf8');
 		}
 
-		// Configure checkpointer (Postgres se disponível; caso contrário, memória)
-		if (this.isPgEnabled()) {
-			// Porta publicada do container (docker-compose mapeia 5544->5432)
-			const fallbackPort = 5544;
-			const poolConfigChat: pg.PoolConfig = { connectionString: this.normalizeConnectionString(process.env.DATABASE_URI as string, fallbackPort) };
-			const poolChat = new pg.Pool(poolConfigChat);
-			this.checkpointer = new PostgresSaver(poolChat);
-			void this.checkpointer.setup();
-
-			// Configure memória de longo prazo em conexão separada, se fornecida
-			const memPoolConfig: pg.PoolConfig | null = process.env.MEM_DATABASE_URI
-				? { connectionString: this.normalizeConnectionString(process.env.MEM_DATABASE_URI as string, 5545) }
-				: null;
-			this.longTerm = memPoolConfig ? new LongTermMemory(memPoolConfig, 'long_term_memories') : null;
-		} else {
-			this.checkpointer = new MemorySaver();
-			this.longTerm = null;
-		}
+		// Checkpointer simplificado em memória
+		this.checkpointer = new MemorySaver();
 
 		const apiKey = process.env.OPENAI_API_KEY;
 		if (apiKey) {
@@ -93,7 +74,7 @@ export class ChatManager {
 				streaming: true,
 			});
 			this.graph = this.buildGraph();
-			this.tools = buildMemoryTools({ longTerm: this.longTerm, getUserId: () => this.userId });
+			this.tools = buildMemoryTools();
 			this.agent = createAgent(this.llm, this.tools);
 		} else {
 			this.llm = null;
@@ -102,23 +83,7 @@ export class ChatManager {
 		}
 	}
 
-	private isPgEnabled(): boolean {
-		return !!process.env.DATABASE_URI;
-	}
-
-	private normalizeConnectionString(uri: string, fallbackPort: number): string {
-		try {
-			const u = new URL(uri);
-			if (u.hostname === 'langgraph-postgres' || u.hostname === 'langgraph-mem-postgres') {
-				u.hostname = '127.0.0.1';
-				// Sempre use a porta de fallback (porta mapeada do container)
-				u.port = String(fallbackPort);
-			}
-			return u.toString();
-		} catch {
-			return uri;
-		}
-	}
+	// Helpers de Postgres removidos
 
 	private buildGraph() {
 		if (!this.llm) throw new Error('LLM não configurado');
@@ -286,22 +251,7 @@ export class ChatManager {
 		return { role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
 	}
 
-	// User memory maintenance APIs
-	async listUserFacts(): Promise<Array<{ id: string; content: string; metadata: Record<string, unknown> }>> {
-		if (!this.longTerm) return [];
-		return this.longTerm.listUserFacts(this.userId, 100);
-	}
-
-	async upsertUserFact(key: string, content: string, tags?: string[]): Promise<void> {
-		if (!this.longTerm) return;
-		await this.longTerm.updateUserProfileSummaryFromFact(this.userId, key, content, tags);
-	}
-
-	async deleteUserFact(key: string): Promise<number> {
-		if (!this.longTerm) return 0;
-		const removed = await this.longTerm.removeUserProfileFact(this.userId, key);
-		return removed ? 1 : 0;
-	}
+	// APIs de memória removidas
 
 	private historyPath(sessionId: string): string {
 		const base = path.join(userDataPath(), 'turodesk', 'history');
