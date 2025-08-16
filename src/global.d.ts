@@ -14,6 +14,11 @@ declare global {
 				offToken: (handler: (data: { id: string; token: string }) => void) => void;
 				offDone: (handler: (data: { id: string; full: string }) => void) => void;
 			};
+			memory: {
+				listFacts: () => Promise<Array<{ id: string; content: string; metadata: Record<string, unknown> }>>;
+				upsertFact: (key: string, content: string, tags?: string[]) => Promise<void>;
+				deleteFact: (key: string) => Promise<number>;
+			};
 		};
 	}
 }
