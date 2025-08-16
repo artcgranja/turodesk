@@ -8,6 +8,9 @@ import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages';
 import { FileSystemChatMessageHistory } from '@langchain/community/stores/message/file_system';
 import { StateGraph, messagesStateReducer } from '@langchain/langgraph';
 import { JSONEmbeddingStore } from '../store/embeddingStore';
+import { initDb } from '../db';
+import { PostgresChatMessageHistory } from '../store/pgMessageHistory';
+import { PostgresEmbeddingStore } from '../store/pgEmbeddingStore';
 import type { ChatMessage, ChatSessionMeta } from './types';
 
 function userDataPath(): string {
@@ -27,10 +30,10 @@ type GraphState = {
 export class ChatManager {
 	private sessionsFile: string;
 	private sessions: ChatSessionMeta[] = [];
-	private embeddingStore: JSONEmbeddingStore;
+	private embeddingStore: JSONEmbeddingStore | PostgresEmbeddingStore;
 	private embeddings: OpenAIEmbeddings | null;
 	private llm: ChatOpenAI | null;
-	private graph: ReturnType<StateGraph<GraphState>['compile']> | null = null;
+	private graph: any | null = null;
 
 	constructor() {
 		const base = path.join(userDataPath(), 'turodesk');
@@ -43,9 +46,15 @@ export class ChatManager {
 				this.sessions = [];
 			}
 		}
-		const memoryDir = path.join(base, 'memory');
-		ensureDir(memoryDir);
-		this.embeddingStore = new JSONEmbeddingStore(path.join(memoryDir, 'longterm.json'));
+		const usePg = !!process.env.POSTGRES_HOST || !!process.env.POSTGRES_USER || !!process.env.POSTGRES_PASSWORD;
+		if (usePg) {
+			void initDb();
+			this.embeddingStore = new PostgresEmbeddingStore();
+		} else {
+			const memoryDir = path.join(base, 'memory');
+			ensureDir(memoryDir);
+			this.embeddingStore = new JSONEmbeddingStore(path.join(memoryDir, 'longterm.json'));
+		}
 
 		const apiKey = process.env.OPENAI_API_KEY;
 		if (apiKey) {
@@ -78,8 +87,13 @@ export class ChatManager {
 				const query = (lastHuman?.content as string) || '';
 				if (query) {
 					const queryEmbedding = await this.embeddings.embedQuery(query);
-					const top = this.embeddingStore.query(queryEmbedding, 5, (r) => (r.metadata as any)?.sessionId === state.sessionId);
-					if (top.length) retrieved = top.map((t) => `- ${t.text}`).join('\n');
+					if (this.embeddingStore instanceof PostgresEmbeddingStore) {
+						const top = await this.embeddingStore.query(queryEmbedding, 5, state.sessionId);
+						if (top.length) retrieved = top.map((t) => `- ${t.text}`).join('\n');
+					} else {
+						const top = (this.embeddingStore as JSONEmbeddingStore).query(queryEmbedding, 5, (r) => (r.metadata as any)?.sessionId === state.sessionId);
+						if (top.length) retrieved = top.map((t) => `- ${t.text}`).join('\n');
+					}
 				}
 			}
 			return { context: retrieved };
@@ -91,13 +105,13 @@ export class ChatManager {
 			return { messages: [result] };
 		};
 
-		const builder = new StateGraph<GraphState>({
+		const builder: any = new (StateGraph as any)({
 			channels: {
 				messages: { reducer: messagesStateReducer, default: () => [] },
 				context: { default: () => '' },
 				sessionId: { default: () => '' },
 			},
-		});
+		} as any);
 		builder.addNode('retrieve', retrieve);
 		builder.addNode('call_model', callModel);
 		builder.addEdge('__start__', 'retrieve');
@@ -135,10 +149,7 @@ export class ChatManager {
 	}
 
 	async getMessages(sessionId: string): Promise<ChatMessage[]> {
-		const history = new FileSystemChatMessageHistory({
-			basePath: path.dirname(this.historyPath(sessionId)),
-			sessionId,
-		});
+		const history = this.getHistory(sessionId);
 		const msgs = await history.getMessages();
 		return msgs.map((m) => ({
 			role: m._getType() === 'human' ? 'user' : m._getType() === 'ai' ? 'assistant' : 'system',
@@ -151,10 +162,7 @@ export class ChatManager {
 		const session = this.sessions.find((s) => s.id === sessionId);
 		if (!session) throw new Error('Sessão não encontrada');
 
-		const history = new FileSystemChatMessageHistory({
-			basePath: path.dirname(this.historyPath(sessionId)),
-			sessionId,
-		});
+		const history = this.getHistory(sessionId);
 
 		if (!this.graph || !this.llm) {
 			await history.addMessage(new HumanMessage(input));
@@ -175,13 +183,11 @@ export class ChatManager {
 		if (this.embeddings) {
 			const textToStore = `${input}\n\nResposta: ${outputMsg}`;
 			const embedding = await this.embeddings.embedQuery(textToStore);
-			this.embeddingStore.add({
-				id: uuidv4(),
-				text: textToStore,
-				embedding,
-				metadata: { sessionId },
-				createdAt: new Date().toISOString(),
-			});
+			if (this.embeddingStore instanceof PostgresEmbeddingStore) {
+				await this.embeddingStore.add({ id: uuidv4(), sessionId, text: textToStore, embedding });
+			} else {
+				(this.embeddingStore as JSONEmbeddingStore).add({ id: uuidv4(), text: textToStore, embedding, metadata: { sessionId }, createdAt: new Date().toISOString() });
+			}
 		}
 
 		session.updatedAt = new Date().toISOString();
@@ -202,17 +208,19 @@ export class ChatManager {
 			return { role: 'assistant', content: 'Configure OPENAI_API_KEY para obter respostas inteligentes.', createdAt: new Date().toISOString() };
 		}
 
-		const history = new FileSystemChatMessageHistory({
-			basePath: path.dirname(this.historyPath(sessionId)),
-			sessionId,
-		});
+		const history = this.getHistory(sessionId);
 		const prev: BaseMessage[] = await history.getMessages();
 
 		let retrieved = '';
 		if (this.embeddings) {
 			const queryEmbedding = await this.embeddings.embedQuery(input);
-			const top = this.embeddingStore.query(queryEmbedding, 5, (r) => (r.metadata as any)?.sessionId === sessionId);
-			if (top.length) retrieved = top.map((t) => `- ${t.text}`).join('\n');
+			if (this.embeddingStore instanceof PostgresEmbeddingStore) {
+				const top = await this.embeddingStore.query(queryEmbedding, 5, sessionId);
+				if (top.length) retrieved = top.map((t) => `- ${t.text}`).join('\n');
+			} else {
+				const top = (this.embeddingStore as JSONEmbeddingStore).query(queryEmbedding, 5, (r) => (r.metadata as any)?.sessionId === sessionId);
+				if (top.length) retrieved = top.map((t) => `- ${t.text}`).join('\n');
+			}
 		}
 
 		const prompt = ChatPromptTemplate.fromMessages([
@@ -238,13 +246,11 @@ export class ChatManager {
 		if (this.embeddings) {
 			const textToStore = `${input}\n\nResposta: ${finalText}`;
 			const embedding = await this.embeddings.embedQuery(textToStore);
-			this.embeddingStore.add({
-				id: uuidv4(),
-				text: textToStore,
-				embedding,
-				metadata: { sessionId },
-				createdAt: new Date().toISOString(),
-			});
+			if (this.embeddingStore instanceof PostgresEmbeddingStore) {
+				await this.embeddingStore.add({ id: uuidv4(), sessionId, text: textToStore, embedding });
+			} else {
+				(this.embeddingStore as JSONEmbeddingStore).add({ id: uuidv4(), text: textToStore, embedding, metadata: { sessionId }, createdAt: new Date().toISOString() });
+			}
 		}
 
 		session.updatedAt = new Date().toISOString();
@@ -261,5 +267,11 @@ export class ChatManager {
 
 	private persistSessions(): void {
 		fs.writeFileSync(this.sessionsFile, JSON.stringify(this.sessions, null, 2), 'utf8');
+	}
+
+	private getHistory(sessionId: string): FileSystemChatMessageHistory | PostgresChatMessageHistory {
+		const usePg = !!process.env.POSTGRES_HOST || !!process.env.POSTGRES_USER || !!process.env.POSTGRES_PASSWORD;
+		if (usePg) return new PostgresChatMessageHistory(sessionId);
+		return new FileSystemChatMessageHistory({ sessionId });
 	}
 }
