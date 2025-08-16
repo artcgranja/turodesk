@@ -16,9 +16,9 @@ export async function renderChat(parent: HTMLElement, props: ChatProps): Promise
 	// Barra inferior em largura total com a borda ocupando toda a tela,
 	// mantendo o conteúdo centralizado pelo .chat-container interno
 	const inputBar = h('div', { class: 'p-4 border-t border-black/10 dark:border-white/10' }, [
-		h('form', { class: 'grid grid-cols-[1fr_auto] gap-2 chat-container', onsubmit: onSubmit }, [
-			h('input', { id: 'msg', class: 'h-12 px-4 rounded-xl bg-white/70 dark:bg-neutral-900/70 outline-none', placeholder: 'Digite sua mensagem...' }),
-			h('button', { class: 'px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 active:scale-[.99] transition' }, ['Enviar'])
+		h('form', { class: 'grid grid-cols-[1fr_auto] gap-2 items-end chat-container', onsubmit: onFormSubmit }, [
+			buildTextarea(),
+			h('button', { class: 'px-5 h-12 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 active:scale-[.99] transition' }, ['Enviar'])
 		])
 	]);
 
@@ -28,13 +28,41 @@ export async function renderChat(parent: HTMLElement, props: ChatProps): Promise
 	messagesWrap.appendChild(inputBar);
 	parent.appendChild(messagesWrap);
 
-	function onSubmit(e: Event): void {
+	function onFormSubmit(e: Event): void {
 		e.preventDefault();
-		const input = document.getElementById('msg') as HTMLInputElement;
-		const value = input.value.trim();
+		submitCurrent();
+	}
+
+	function submitCurrent(): void {
+		const ta = document.getElementById('msg') as HTMLTextAreaElement;
+		const value = ta.value.trim();
 		if (!value) return;
-		input.value = '';
+		ta.value = '';
+		autoResize(ta);
 		void props.onSend(value);
+	}
+
+	function buildTextarea(): HTMLElement {
+		const ta = h('textarea', {
+			id: 'msg',
+			class: 'min-h-12 max-h-48 px-4 py-3 rounded-xl bg-white/70 dark:bg-neutral-900/70 outline-none resize-none',
+			placeholder: 'Digite sua mensagem... (Shift+Enter para nova linha)'
+		}) as HTMLTextAreaElement;
+		ta.onkeydown = (ev: KeyboardEvent) => {
+			if (ev.key === 'Enter' && !ev.shiftKey) {
+				ev.preventDefault();
+				submitCurrent();
+			}
+		};
+		ta.oninput = () => autoResize(ta);
+		// Ajusta altura inicial
+		setTimeout(() => autoResize(ta));
+		return ta;
+	}
+
+	function autoResize(ta: HTMLTextAreaElement): void {
+		ta.style.height = 'auto';
+		ta.style.height = Math.min(ta.scrollHeight, 192) + 'px';
 	}
 }
 
