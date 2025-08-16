@@ -78,9 +78,6 @@ async function render(): Promise<void> {
 	const app = document.getElementById('app')!;
 	app.innerHTML = '';
 
-	const dragBar = h('div', { class: 'fixed top-0 left-0 right-0 h-8 z-20', style: '-webkit-app-region: drag;' });
-	app.appendChild(dragBar);
-
 	const sidebar = buildSidebar({
 		sessions: state.sessions,
 		currentId: state.currentId,
@@ -94,7 +91,7 @@ async function render(): Promise<void> {
 	});
 	const right = h('div', { class: 'h-full overflow-hidden' });
 
-	const main = h('div', { class: 'h-[calc(100vh-2rem)] grid grid-cols-[16rem_1fr] md:grid-cols-[18rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, right]);
+	const main = h('div', { class: 'h-screen grid grid-cols-[16rem_1fr] md:grid-cols-[18rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebar, right]);
 	app.appendChild(main);
 
 	if (state.mode === 'intro') {

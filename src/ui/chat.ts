@@ -12,15 +12,20 @@ export type ChatProps = {
 export async function renderChat(parent: HTMLElement, props: ChatProps): Promise<void> {
 	const messagesWrap = h('div', { class: 'h-full grid grid-rows-[1fr_auto] overflow-hidden' });
 	const messagesList = h('div', { id: 'messages-list', class: 'p-6 overflow-auto space-y-6 chat-container' });
-	const inputRow = h('form', { class: 'p-4 border-t border-black/10 dark:border-white/10 grid grid-cols-[1fr_auto] gap-2 chat-container', onsubmit: onSubmit }, [
-		h('input', { id: 'msg', class: 'h-12 px-4 rounded-xl bg-white/70 dark:bg-neutral-900/70 outline-none', placeholder: 'Digite sua mensagem...' }),
-		h('button', { class: 'px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 active:scale-[.99] transition' }, ['Enviar'])
+
+	// Barra inferior em largura total com a borda ocupando toda a tela,
+	// mantendo o conteúdo centralizado pelo .chat-container interno
+	const inputBar = h('div', { class: 'p-4 border-t border-black/10 dark:border-white/10' }, [
+		h('form', { class: 'grid grid-cols-[1fr_auto] gap-2 chat-container', onsubmit: onSubmit }, [
+			h('input', { id: 'msg', class: 'h-12 px-4 rounded-xl bg-white/70 dark:bg-neutral-900/70 outline-none', placeholder: 'Digite sua mensagem...' }),
+			h('button', { class: 'px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 active:scale-[.99] transition' }, ['Enviar'])
+		])
 	]);
 
 	const msgs = await props.loadMessages(props.sessionId);
 	msgs.forEach((m) => messagesList.appendChild(renderMsg(m.role, m.content)));
 	messagesWrap.appendChild(messagesList);
-	messagesWrap.appendChild(inputRow);
+	messagesWrap.appendChild(inputBar);
 	parent.appendChild(messagesWrap);
 
 	function onSubmit(e: Event): void {

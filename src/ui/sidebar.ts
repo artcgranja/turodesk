@@ -16,7 +16,7 @@ export type SidebarProps = {
 
 export function buildSidebar(props: SidebarProps): HTMLElement {
 	const { sessions, currentId, mode } = props;
-	const sidebar = h('div', { class: 'w-64 md:w-72 h-full shrink-0 border-r border-black/10 dark:border-white/10 p-3 space-y-3 overflow-y-auto' });
+	const sidebar = h('div', { class: 'w-64 md:w-72 h-full shrink-0 border-r border-black/10 dark:border-white/10 p-3 pt-8 space-y-3 overflow-y-auto' });
 	const header = h('div', { class: 'flex items-center justify-between' }, [
 		h('div', { class: 'font-medium text-sm text-slate-500 dark:text-slate-400' }, ['Conversas']),
 		h(
