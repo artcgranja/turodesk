@@ -48,14 +48,25 @@ function bindStreamEventsOnce(): void {
 		const prevRaw = el.getAttribute('data-raw') || '';
 		const nextRaw = prevRaw + token;
 		el.setAttribute('data-raw', nextRaw);
+		// limpa placeholder/caret anteriores antes de renderizar
+		el.innerHTML = '';
 		renderMarkdownFromRaw(el, nextRaw);
+		// adiciona caret de digitação enquanto ainda está chegando
+		const caret = h('span', { class: 'typing-caret' }, ['|']);
+		el.appendChild(caret);
 		const list = document.getElementById('messages-list');
 		if (list) list.scrollTop = list.scrollHeight;
 	});
 	window.turodesk.chats.onDone(({ id }) => {
 		if (id !== state.currentId) return;
 		const el = document.getElementById('assistant-stream');
-		if (el) el.removeAttribute('id');
+		if (el) {
+			// render final sem caret e remove id
+			const raw = el.getAttribute('data-raw') || '';
+			el.innerHTML = '';
+			renderMarkdownFromRaw(el, raw);
+			el.removeAttribute('id');
+		}
 	});
 	state.subscriptionsBound = true;
 }
@@ -157,7 +168,7 @@ function renderIntroPane(parent: HTMLElement): void {
 
 async function renderChatPane(parent: HTMLElement): Promise<void> {
 	const messagesWrap = h('div', { class: 'h-full grid grid-rows-[1fr_auto] overflow-hidden' });
-	const messagesList = h('div', { id: 'messages-list', class: 'p-6 overflow-auto space-y-4 chat-container' });
+	const messagesList = h('div', { id: 'messages-list', class: 'p-6 overflow-auto space-y-6 chat-container' });
 	const inputRow = h('form', { class: 'p-4 border-t border-black/10 dark:border-white/10 grid grid-cols-[1fr_auto] gap-2 chat-container', onsubmit: onSend }, [
 		h('input', { id: 'msg', class: 'h-12 px-4 rounded-xl bg-white/70 dark:bg-neutral-900/70 outline-none', placeholder: 'Digite sua mensagem...' }),
 		h('button', { class: 'px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 active:scale-[.99] transition' }, ['Enviar'])
@@ -235,11 +246,22 @@ function renderMsg(role: 'user' | 'assistant' | 'system', content: string): HTML
 		if (content === '') {
 			el.setAttribute('id', 'assistant-stream');
 			el.setAttribute('data-raw', '');
-			el.textContent = '';
+			// placeholder com animação de carregando
+			const placeholder = h('div', { class: 'assistant-placeholder text-slate-500 dark:text-slate-400' }, [
+				'Digitando',
+				h('span', { class: 'typing-dot' }, []),
+				h('span', { class: 'typing-dot' }, []),
+				h('span', { class: 'typing-dot' }, []),
+			]);
+			el.appendChild(placeholder);
 		} else {
 			renderMarkdownFromRaw(el, content);
+			// adiciona um cursor de digitação ao final enquanto chega mais conteúdo
+			const caret = h('span', { class: 'typing-caret' }, ['|']);
+			el.appendChild(caret);
 		}
 	} else {
+		// mensagem do usuário mantém bolha
 		el.textContent = content;
 	}
 	return el;
