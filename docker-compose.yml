@@ -38,13 +38,11 @@ services:
         condition: service_healthy
       langgraph-postgres:
         condition: service_healthy
-    command: sh -c 'echo "Defina IMAGE_NAME com a imagem buildada via langgraph build" && sleep infinity'
+    env_file:
+      - .env
     environment:
-      REDIS_URI: redis://langgraph-redis:6379
-      # Ajuste conforme suas credenciais do Postgres acima
-      POSTGRES_URI: postgres://turodesk:turodesk@langgraph-postgres:5432/turodesk?sslmode=disable
-      # Opcional: definir via arquivo .env real se preferir
-      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
+      DATABASE_URI: ${DATABASE_URI:-postgres://turodesk:turodesk@langgraph-postgres:5432/turodesk?sslmode=disable}
 
 volumes:
   db-data:

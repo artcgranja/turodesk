@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('turodesk', {
 		offToken: (handler: (data: { id: string; token: string }) => void) => ipcRenderer.off('chats:token', handler as any),
 		offDone: (handler: (data: { id: string; full: string }) => void) => ipcRenderer.off('chats:done', handler as any),
 	},
+	memory: {
+		listFacts: () => ipcRenderer.invoke('mem:listFacts'),
+		upsertFact: (key: string, content: string, tags?: string[]) => ipcRenderer.invoke('mem:upsertFact', key, content, tags),
+		deleteFact: (key: string) => ipcRenderer.invoke('mem:deleteFact', key),
+	},
 } as const);
 
 

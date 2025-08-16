@@ -51,7 +51,7 @@ export async function initDb(): Promise<void> {
 			-- long-term memory schema (pgvector) per AI Context doc
 			CREATE TABLE IF NOT EXISTS long_term_memories (
 				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				user_id TEXT NOT NULL,
+				user_id TEXT,
 				content TEXT NOT NULL,
 				embedding vector(1536),
 				metadata JSONB DEFAULT '{}',

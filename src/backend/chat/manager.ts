@@ -4,8 +4,12 @@ import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
-import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, BaseMessage, SystemMessage } from '@langchain/core/messages';
 import { StateGraph, messagesStateReducer } from '@langchain/langgraph';
+import { createAgent } from '../agent';
+import { getSystemPrompt } from '../agent/systemPrompt';
+import type { DynamicStructuredTool } from '@langchain/core/tools';
+import { buildMemoryTools } from '../tools/memoryTools';
 import pg from 'pg';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { MemorySaver } from '@langchain/langgraph-checkpoint';
@@ -27,8 +31,11 @@ type GraphState = {
 export class ChatManager {
 	private sessionsFile: string;
 	private sessions: ChatSessionMeta[] = [];
+	private userId: string;
 	private llm: ChatOpenAI | null;
 	private graph: any | null = null;
+	private agent: any | null = null;
+	private tools: DynamicStructuredTool[] = [];
 	private checkpointer: PostgresSaver | MemorySaver;
 	private longTerm: LongTermMemory | null = null;
 
@@ -44,19 +51,34 @@ export class ChatManager {
 			}
 		}
 
+		// Define um userId estável local (persistido em disco)
+		const uidPath = path.join(base, 'user.json');
+		if (fs.existsSync(uidPath)) {
+			try {
+				const data = JSON.parse(fs.readFileSync(uidPath, 'utf8')) as { userId?: string };
+				this.userId = data.userId || 'local_user';
+			} catch {
+				this.userId = 'local_user';
+			}
+		} else {
+			this.userId = uuidv4();
+			fs.writeFileSync(uidPath, JSON.stringify({ userId: this.userId }, null, 2), 'utf8');
+		}
+
 		// Configure checkpointer (Postgres se disponível; caso contrário, memória)
 		if (this.isPgEnabled()) {
-			const poolConfig: pg.PoolConfig = {
-				host: process.env.POSTGRES_HOST || '127.0.0.1',
-				port: Number(process.env.POSTGRES_PORT || 5432),
-				user: process.env.POSTGRES_USER || 'turodesk',
-				password: process.env.POSTGRES_PASSWORD || 'turodesk',
-				database: process.env.POSTGRES_DB || 'turodesk',
-			};
-			const pool = new pg.Pool(poolConfig);
-			this.checkpointer = new PostgresSaver(pool);
+			// Porta publicada do container (docker-compose mapeia 5544->5432)
+			const fallbackPort = 5544;
+			const poolConfigChat: pg.PoolConfig = { connectionString: this.normalizeConnectionString(process.env.DATABASE_URI as string, fallbackPort) };
+			const poolChat = new pg.Pool(poolConfigChat);
+			this.checkpointer = new PostgresSaver(poolChat);
 			void this.checkpointer.setup();
-			this.longTerm = new LongTermMemory(poolConfig, 'long_term_memories');
+
+			// Configure memória de longo prazo em conexão separada, se fornecida
+			const memPoolConfig: pg.PoolConfig | null = process.env.MEM_DATABASE_URI
+				? { connectionString: this.normalizeConnectionString(process.env.MEM_DATABASE_URI as string, fallbackPort) }
+				: null;
+			this.longTerm = memPoolConfig ? new LongTermMemory(memPoolConfig, 'long_term_memories') : null;
 		} else {
 			this.checkpointer = new MemorySaver();
 			this.longTerm = null;
@@ -68,16 +90,34 @@ export class ChatManager {
 				apiKey,
 				model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
 				temperature: 0.2,
+				streaming: true,
 			});
 			this.graph = this.buildGraph();
+			this.tools = buildMemoryTools({ longTerm: this.longTerm, getUserId: () => this.userId });
+			this.agent = createAgent(this.llm, this.tools);
 		} else {
 			this.llm = null;
 			this.graph = null;
+			this.agent = null;
 		}
 	}
 
 	private isPgEnabled(): boolean {
-		return !!(process.env.POSTGRES_HOST || process.env.POSTGRES_USER || process.env.POSTGRES_PASSWORD || process.env.POSTGRES_DB);
+		return !!process.env.DATABASE_URI;
+	}
+
+	private normalizeConnectionString(uri: string, fallbackPort: number): string {
+		try {
+			const u = new URL(uri);
+			if (u.hostname === 'langgraph-postgres') {
+				u.hostname = '127.0.0.1';
+				// Sempre use a porta de fallback (porta mapeada do container)
+				u.port = String(fallbackPort);
+			}
+			return u.toString();
+		} catch {
+			return uri;
+		}
 	}
 
 	private buildGraph() {
@@ -103,6 +143,8 @@ export class ChatManager {
 		builder.addEdge('call_model', '__end__');
 		return builder.compile({ checkpointer: this.checkpointer });
 	}
+
+	// tools moved to ../tools/memoryTools
 
 	listSessions(): ChatSessionMeta[] {
 		return [...this.sessions].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
@@ -133,13 +175,31 @@ export class ChatManager {
 	}
 
 	async getMessages(sessionId: string): Promise<ChatMessage[]> {
-		const ckpt = await (this.checkpointer as any).get({ configurable: { thread_id: sessionId } });
+		// Prefer stored local history if available
+		const histPath = this.historyPath(sessionId);
+		if (fs.existsSync(histPath)) {
+			try {
+				const raw = JSON.parse(fs.readFileSync(histPath, 'utf8')) as ChatMessage[];
+				if (Array.isArray(raw) && raw.length > 0) return raw;
+			} catch {}
+		}
+
+		// Fallback: read from LangGraph checkpointer
+		const ckpt = await (this.checkpointer as any).get({ configurable: { thread_id: sessionId, checkpoint_ns: 'turodesk' } });
 		const msgs: BaseMessage[] = ckpt?.channel_values?.messages ?? [];
-		return msgs.map((m) => ({
-			role: m._getType() === 'human' ? 'user' : m._getType() === 'ai' ? 'assistant' : 'system',
+		const mapped: ChatMessage[] = msgs.map((m): ChatMessage => ({
+			role: (m._getType() === 'human' ? 'user' : m._getType() === 'ai' ? 'assistant' : 'system') as 'user' | 'assistant' | 'system',
 			content: m.content as string,
 			createdAt: new Date().toISOString(),
 		}));
+		// Backfill local history so it persists on next loads
+		try {
+			const histPath = this.historyPath(sessionId);
+			if (!fs.existsSync(histPath) && mapped.length > 0) {
+				fs.writeFileSync(histPath, JSON.stringify(mapped, null, 2), 'utf8');
+			}
+		} catch {}
+		return mapped;
 	}
 
 	async sendMessage(sessionId: string, input: string): Promise<ChatMessage> {
@@ -155,9 +215,15 @@ export class ChatManager {
 
 		const result = await this.graph.invoke(
 			{ messages: [new HumanMessage(input)] },
-			{ configurable: { thread_id: sessionId } }
+			{ configurable: { thread_id: sessionId, checkpoint_ns: 'turodesk' } }
 		);
 		const outputMsg = (result.messages[result.messages.length - 1] ?? new AIMessage('')).content as string;
+
+		// Persist history locally
+		this.appendToHistory(sessionId, [
+			{ role: 'user', content: input, createdAt: new Date().toISOString() },
+			{ role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() },
+		]);
 
 		session.updatedAt = new Date().toISOString();
 		this.persistSessions();
@@ -177,45 +243,63 @@ export class ChatManager {
 			return { role: 'assistant', content: 'Configure OPENAI_API_KEY para obter respostas inteligentes.', createdAt: new Date().toISOString() };
 		}
 
-		// Recupera memórias relevantes (quando Postgres disponível)
-		let memoryContext = '';
-		if (this.longTerm) {
-			try {
-				const memories = await this.longTerm.search(input, 'user_default', 5);
-				if (memories.length) {
-					memoryContext = memories.map((m) => `- ${m.content}`).join('\n');
-				}
-			} catch {}
-		}
+		// Não injeta contexto histórico automaticamente; o agente usa tools quando necessário
+		const finalInput = input;
 
-		const finalInput = memoryContext ? `${input}\n\nContexto histórico:\n${memoryContext}` : input;
+		// Streaming real via LangChain callbacks, preservando histórico local manualmente
 
-		// Executa via LangGraph com persistência por checkpoint; emite o texto ao final
-		const result = await this.graph.invoke(
-			{ messages: [new HumanMessage(finalInput)] },
-			{ configurable: { thread_id: sessionId } }
+		// Usa o agente ReAct com ferramentas expostas; suporta tool calls
+		const prior = await this.getMessages(sessionId);
+		const priorAsBase: BaseMessage[] = [
+			new SystemMessage(getSystemPrompt({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })),
+			...prior.map((m) => (m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content))),
+		];
+		let fullText = '';
+		const streamRes = await this.agent.invoke(
+			{ messages: [...priorAsBase, new HumanMessage(finalInput)] },
+			{
+				configurable: { thread_id: sessionId, checkpoint_ns: 'turodesk' },
+				callbacks: [
+					{
+						handleLLMNewToken: (token: string) => {
+							fullText += token;
+							onToken(token);
+						},
+					},
+				],
+			}
 		);
-		const finalText = (result.messages[result.messages.length - 1] ?? new AIMessage('')).content as string;
-		if (finalText) onToken(finalText);
+		const finalText = fullText || ((streamRes?.messages?.[streamRes.messages.length - 1] as any)?.content as string) || '';
 
-		// Promove para memória de longo prazo (básico)
-		if (this.longTerm) {
-			try {
-				await this.longTerm.addMemory({
-					userId: 'user_default',
-					threadId: sessionId,
-					content: `Pergunta: ${input}\nResposta: ${finalText}`,
-					category: 'conversation',
-					tags: ['chat'],
-					importanceScore: 0.5,
-				});
-			} catch {}
-		}
+		// Não salva automaticamente trocas de chat na memória de longo prazo.
+		// Apenas as tools explicitamente chamadas devem persistir memórias importantes.
+
+		// Persist history locally
+		this.appendToHistory(sessionId, [
+			{ role: 'user', content: input, createdAt: new Date().toISOString() },
+			{ role: 'assistant', content: finalText, createdAt: new Date().toISOString() },
+		]);
 
 		session.updatedAt = new Date().toISOString();
 		this.persistSessions();
 
 		return { role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
+	}
+
+	// User memory maintenance APIs
+	async listUserFacts(): Promise<Array<{ id: string; content: string; metadata: Record<string, unknown> }>> {
+		if (!this.longTerm) return [];
+		return this.longTerm.listUserFacts(this.userId, 100);
+	}
+
+	async upsertUserFact(key: string, content: string, tags?: string[]): Promise<void> {
+		if (!this.longTerm) return;
+		await this.longTerm.upsertUserFact(this.userId, key, content, tags);
+	}
+
+	async deleteUserFact(key: string): Promise<number> {
+		if (!this.longTerm) return 0;
+		return this.longTerm.deleteUserFactByKey(this.userId, key);
 	}
 
 	private historyPath(sessionId: string): string {
@@ -226,5 +310,20 @@ export class ChatManager {
 
 	private persistSessions(): void {
 		fs.writeFileSync(this.sessionsFile, JSON.stringify(this.sessions, null, 2), 'utf8');
+	}
+
+	private appendToHistory(sessionId: string, messages: ChatMessage[]): void {
+		const p = this.historyPath(sessionId);
+		let existing: ChatMessage[] = [];
+		if (fs.existsSync(p)) {
+			try {
+				existing = JSON.parse(fs.readFileSync(p, 'utf8')) as ChatMessage[];
+				if (!Array.isArray(existing)) existing = [];
+			} catch {
+				existing = [];
+			}
+		}
+		const next = [...existing, ...messages];
+		fs.writeFileSync(p, JSON.stringify(next, null, 2), 'utf8');
 	}
 }
