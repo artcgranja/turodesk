@@ -1,5 +1,15 @@
 services:
-  db:
+  langgraph-redis:
+    image: redis:6
+    container_name: turodesk_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 1s
+      retries: 5
+
+  langgraph-postgres:
     image: pgvector/pgvector:pg16
     container_name: turodesk_postgres
     restart: unless-stopped
@@ -8,7 +18,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-turodesk}
       POSTGRES_DB: ${POSTGRES_DB:-turodesk}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5544}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./scripts/db/init:/docker-entrypoint-initdb.d:ro
@@ -17,6 +27,24 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  langgraph-api:
+    image: ${IMAGE_NAME:-busybox}
+    container_name: turodesk_langgraph_api
+    ports:
+      - "8123:8000"
+    depends_on:
+      langgraph-redis:
+        condition: service_healthy
+      langgraph-postgres:
+        condition: service_healthy
+    command: sh -c 'echo "Defina IMAGE_NAME com a imagem buildada via langgraph build" && sleep infinity'
+    environment:
+      REDIS_URI: redis://langgraph-redis:6379
+      # Ajuste conforme suas credenciais do Postgres acima
+      POSTGRES_URI: postgres://turodesk:turodesk@langgraph-postgres:5432/turodesk?sslmode=disable
+      # Opcional: definir via arquivo .env real se preferir
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
 
 volumes:
   db-data:
