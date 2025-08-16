@@ -45,9 +45,10 @@ function bindStreamEventsOnce(): void {
 		if (id !== state.currentId) return;
 		const el = document.getElementById('assistant-stream');
 		if (!el) return;
-		el.textContent = (el.textContent || '') + token;
-		renderMarkdownInto(el);
-		attachCopyButtons(el);
+		const prevRaw = el.getAttribute('data-raw') || '';
+		const nextRaw = prevRaw + token;
+		el.setAttribute('data-raw', nextRaw);
+		renderMarkdownFromRaw(el, nextRaw);
 		const list = document.getElementById('messages-list');
 		if (list) list.scrollTop = list.scrollHeight;
 	});
@@ -169,12 +170,47 @@ async function renderChatPane(parent: HTMLElement): Promise<void> {
 	parent.appendChild(messagesWrap);
 }
 
-function attachCopyButtons(scope: Element | Document = document): void {
-	scope.querySelectorAll('pre').forEach((pre) => {
-		if (pre.querySelector('.code-copy-btn')) return;
-		const btn = h('button', { class: 'code-copy-btn', onclick: () => navigator.clipboard.writeText(pre.textContent || '') }, ['Copiar']);
-		pre.style.position = 'relative';
-		pre.appendChild(btn);
+function enhanceCodeBlocks(scope: Element | Document = document): void {
+	const pres = scope.querySelectorAll('pre > code');
+	pres.forEach((codeEl) => {
+		const code = codeEl as HTMLElement;
+		if (code.closest('.code-block')) return; // já processado
+
+		const pre = code.parentElement as HTMLElement;
+		const langMatch = (code.className || '').match(/language-([a-z0-9+#-]+)/i);
+		const langLabel = (langMatch?.[1] || 'texto').toLowerCase();
+
+		const wrapper = document.createElement('div');
+		wrapper.className = 'code-block';
+
+		const header = document.createElement('div');
+		header.className = 'code-block-header';
+
+		const title = document.createElement('span');
+		title.className = 'code-title';
+		title.textContent = langLabel;
+
+		const copyBtn = document.createElement('button');
+		copyBtn.className = 'code-copy-btn';
+		copyBtn.textContent = 'Copiar';
+		copyBtn.onclick = () => {
+			const text = code.textContent || '';
+			void navigator.clipboard.writeText(text);
+			copyBtn.textContent = 'Copiado!';
+			setTimeout(() => (copyBtn.textContent = 'Copiar'), 1200);
+		};
+
+		header.appendChild(title);
+		header.appendChild(copyBtn);
+
+		const body = document.createElement('div');
+		body.className = 'code-block-body';
+
+		// Move o <pre> existente para dentro do body
+		pre.replaceWith(wrapper);
+		body.appendChild(pre);
+		wrapper.appendChild(header);
+		wrapper.appendChild(body);
 	});
 }
 
@@ -182,7 +218,13 @@ function renderMarkdownInto(el: Element): void {
 	const raw = el.textContent || '';
 	const html = DOMPurify.sanitize(marked.parse(raw) as string);
 	(el as HTMLElement).innerHTML = html;
-	attachCopyButtons(el);
+	enhanceCodeBlocks(el);
+}
+
+function renderMarkdownFromRaw(el: Element, raw: string): void {
+	const html = DOMPurify.sanitize(marked.parse(raw) as string);
+	(el as HTMLElement).innerHTML = html;
+	enhanceCodeBlocks(el);
 }
 
 function renderMsg(role: 'user' | 'assistant' | 'system', content: string): HTMLElement {
@@ -190,9 +232,13 @@ function renderMsg(role: 'user' | 'assistant' | 'system', content: string): HTML
 	const cls = role === 'user' ? 'msg-user ml-auto' : role === 'assistant' ? 'msg-assistant' : 'bg-amber-100 text-amber-900';
 	const el = h('div', { class: `${base} ${cls}` }, []);
 	if (role === 'assistant') {
-		el.setAttribute('id', 'assistant-stream');
-		el.textContent = content;
-		renderMarkdownInto(el);
+		if (content === '') {
+			el.setAttribute('id', 'assistant-stream');
+			el.setAttribute('data-raw', '');
+			el.textContent = '';
+		} else {
+			renderMarkdownFromRaw(el, content);
+		}
 	} else {
 		el.textContent = content;
 	}
