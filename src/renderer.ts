@@ -21,7 +21,7 @@ declare global {
 }
 
 import { h } from './ui/dom';
-import { renderMarkdownFromRaw } from './ui/markdown';
+import { renderMarkdownFromRaw, appendTypingCaret } from './ui/markdown';
 import { buildSidebar } from './ui/sidebar';
 import { renderHome } from './ui/home';
 import { renderChat, renderMsg } from './ui/chat';
@@ -54,9 +54,8 @@ function bindStreamEventsOnce(): void {
 		// limpa placeholder/caret anteriores antes de renderizar
 		el.innerHTML = '';
 		renderMarkdownFromRaw(el, nextRaw);
-		// adiciona caret de digitação enquanto ainda está chegando
-		const caret = h('span', { class: 'typing-caret' }, ['|']);
-		el.appendChild(caret);
+		// adiciona caret de digitação no final do último bloco de conteúdo
+		appendTypingCaret(el);
 		const list = document.getElementById('messages-list');
 		if (list) list.scrollTop = list.scrollHeight;
 	});

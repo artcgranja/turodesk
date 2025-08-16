@@ -55,8 +55,6 @@ export function renderMsg(role: 'user' | 'assistant' | 'system', content: string
 			el.appendChild(placeholder);
 		} else {
 			renderMarkdownFromRaw(el, content);
-			const caret = h('span', { class: 'typing-caret' }, ['|']);
-			el.appendChild(caret);
 		}
 	} else {
 		el.textContent = content;

@@ -57,4 +57,35 @@ export function renderMarkdownFromRaw(el: Element, raw: string): void {
 	enhanceCodeBlocks(el);
 }
 
+export function appendTypingCaret(root: Element): void {
+	const caret = document.createElement('span');
+	caret.className = 'typing-caret';
+	caret.textContent = '|';
+
+	let target: Element | null = (root as HTMLElement).lastElementChild;
+	if (!target) {
+		root.appendChild(caret);
+		return;
+	}
+
+	// Se último elemento for PRE, tenta colocar dentro do CODE
+	if (target.tagName === 'PRE') {
+		const code = target.querySelector('code');
+		if (code) target = code;
+	}
+
+	// Se for lista, usa o último LI
+	if (target.tagName === 'UL' || target.tagName === 'OL') {
+		const lastLi = target.lastElementChild as Element | null;
+		if (lastLi) target = lastLi;
+	}
+
+	// Caso o target não aceite inline, fallback para root
+	try {
+		target.appendChild(caret);
+	} catch {
+		root.appendChild(caret);
+	}
+}
+
 
