@@ -24,12 +24,14 @@ export function buildSidebar(props: SidebarProps): HTMLElement {
 		buildToggleButton(props),
 		h('div', { class: 'font-medium text-sm text-slate-500 dark:text-slate-400 select-none' }, ['Conversas'])
 	]);
-	const newBtn = h(
-		'button',
-		{ class: 'px-2 py-1 rounded-md bg-indigo-500 text-white text-sm hover:bg-indigo-600 active:scale-[.99] transition', onclick: props.onNewChat, title: 'Novo chat (N)' },
-		['Novo']
-	);
-	const header = h('div', { class: 'flex items-center justify-between' }, [leftHeader, newBtn]);
+	const header = h('div', { class: 'flex items-center justify-between' }, [leftHeader]);
+
+	// Botão "+ New chat" acima da barra de pesquisa
+	const newChatBtn = h('button', {
+		class: 'w-full inline-flex items-center justify-start gap-2 h-9 px-3 rounded-md text-slate-600 dark:text-slate-300 text-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:text-indigo-600 active:scale-[.99] transition',
+		onclick: props.onNewChat,
+		title: 'Novo chat (N)'
+	}, [svgPlus(), 'New chat']);
 
 	const searchWrap = h('div', { class: 'relative' }, [
 		h('span', { class: 'absolute left-3 top-1/2 -translate-y-1/2 text-slate-400' }, [svgSearch()]),
@@ -60,6 +62,7 @@ export function buildSidebar(props: SidebarProps): HTMLElement {
 	});
 
 	sidebar.appendChild(header);
+	sidebar.appendChild(newChatBtn);
 	sidebar.appendChild(searchWrap);
 	sidebar.appendChild(list);
 	return sidebar;
@@ -79,7 +82,7 @@ export function buildSidebarRail(
 		onclick: onOpen
 	}, [svgSidebarSymbol()]);
 	const newBtn = h('button', {
-		class: 'inline-flex items-center justify-center h-8 w-8 rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/10 active:scale-95 transition',
+		class: 'inline-flex items-center justify-center h-8 w-8 rounded-md text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:text-indigo-600 active:scale-95 transition',
 		title: 'Novo chat',
 		onclick: onNewChat
 	}, [svgPlus()]);
