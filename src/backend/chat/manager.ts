@@ -76,7 +76,7 @@ export class ChatManager {
 
 			// Configure memória de longo prazo em conexão separada, se fornecida
 			const memPoolConfig: pg.PoolConfig | null = process.env.MEM_DATABASE_URI
-				? { connectionString: this.normalizeConnectionString(process.env.MEM_DATABASE_URI as string, fallbackPort) }
+				? { connectionString: this.normalizeConnectionString(process.env.MEM_DATABASE_URI as string, 5545) }
 				: null;
 			this.longTerm = memPoolConfig ? new LongTermMemory(memPoolConfig, 'long_term_memories') : null;
 		} else {
@@ -109,7 +109,7 @@ export class ChatManager {
 	private normalizeConnectionString(uri: string, fallbackPort: number): string {
 		try {
 			const u = new URL(uri);
-			if (u.hostname === 'langgraph-postgres') {
+			if (u.hostname === 'langgraph-postgres' || u.hostname === 'langgraph-mem-postgres') {
 				u.hostname = '127.0.0.1';
 				// Sempre use a porta de fallback (porta mapeada do container)
 				u.port = String(fallbackPort);
@@ -294,12 +294,13 @@ export class ChatManager {
 
 	async upsertUserFact(key: string, content: string, tags?: string[]): Promise<void> {
 		if (!this.longTerm) return;
-		await this.longTerm.upsertUserFact(this.userId, key, content, tags);
+		await this.longTerm.updateUserProfileSummaryFromFact(this.userId, key, content, tags);
 	}
 
 	async deleteUserFact(key: string): Promise<number> {
 		if (!this.longTerm) return 0;
-		return this.longTerm.deleteUserFactByKey(this.userId, key);
+		const removed = await this.longTerm.removeUserProfileFact(this.userId, key);
+		return removed ? 1 : 0;
 	}
 
 	private historyPath(sessionId: string): string {

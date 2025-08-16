@@ -28,6 +28,25 @@ services:
       timeout: 3s
       retries: 10
 
+  langgraph-mem-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: turodesk_mem_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MEM_POSTGRES_USER:-turodesk}
+      POSTGRES_PASSWORD: ${MEM_POSTGRES_PASSWORD:-turodesk}
+      POSTGRES_DB: ${MEM_POSTGRES_DB:-turodesk_mem}
+    ports:
+      - "${MEM_POSTGRES_PORT:-5545}:5432"
+    volumes:
+      - mem-db-data:/var/lib/postgresql/data
+      - ./scripts/mem/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   langgraph-api:
     image: ${IMAGE_NAME:-busybox}
     container_name: turodesk_langgraph_api
@@ -38,14 +57,19 @@ services:
         condition: service_healthy
       langgraph-postgres:
         condition: service_healthy
+      langgraph-mem-postgres:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
       DATABASE_URI: ${DATABASE_URI:-postgres://turodesk:turodesk@langgraph-postgres:5432/turodesk?sslmode=disable}
+      MEM_DATABASE_URI: ${MEM_DATABASE_URI:-postgres://turodesk:turodesk@langgraph-mem-postgres:5432/turodesk_mem?sslmode=disable}
 
 volumes:
   db-data:
+    driver: local
+  mem-db-data:
     driver: local
 
 

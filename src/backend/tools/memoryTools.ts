@@ -12,33 +12,40 @@ export function buildMemoryTools(deps: MemoryToolsDeps): DynamicStructuredTool[]
 
   const upsertUserFact = new DynamicStructuredTool({
     name: 'upsert_user_fact',
-    description: 'Atualiza ou cria um fato de perfil do usuário (ex: nome, preferência). Use chave curta e descritiva.',
+    description:
+      'Atualiza o resumo único de perfil do usuário com uma frase clara (ex: "O nome do usuário é Arthur."). Use uma chave curta (ex: nome, idioma, tema).',
     schema: z.object({ key: z.string(), content: z.string(), tags: z.array(z.string()).optional() }),
     func: async ({ key, content, tags }) => {
-      if (longTerm) await longTerm.upsertUserFact(getUserId(), key, content, tags);
-      return `Fato salvo: ${key}`;
+      if (!longTerm) return 'Memória desabilitada';
+      await longTerm.updateUserProfileSummaryFromFact(getUserId(), key, content, tags);
+      const summary = await longTerm.getUserProfileSummary(getUserId());
+      return `Resumo atualizado. Perfil: ${summary}`;
     },
   });
 
   const deleteUserFact = new DynamicStructuredTool({
     name: 'delete_user_fact',
-    description: 'Remove um fato de perfil do usuário por chave exata.',
+    description: 'Remove uma informação específica do resumo de perfil do usuário pela chave (ex: nome, idioma).',
     schema: z.object({ key: z.string() }),
     func: async ({ key }) => {
       if (!longTerm) return 'Memória desabilitada';
-      const removed = await longTerm.deleteUserFactByKey(getUserId(), key);
-      return removed > 0 ? `Removido ${removed} registro(s) para ${key}` : `Nenhum registro para ${key}`;
+      await longTerm.removeUserProfileFact(getUserId(), key);
+      const summary = await longTerm.getUserProfileSummary(getUserId());
+      return summary ? `Atualizado. Perfil: ${summary}` : 'Perfil vazio.';
     },
   });
 
   const listUserFacts = new DynamicStructuredTool({
     name: 'list_user_facts',
-    description: 'Lista fatos de perfil do usuário mais recentes.',
-    schema: z.object({ limit: z.number().int().min(1).max(200).default(50) }),
-    func: async ({ limit }) => {
+    description: 'Lista o mapa de chaves e a versão textual do resumo de perfil do usuário.',
+    schema: z.object({}).optional(),
+    func: async (_args) => {
       if (!longTerm) return 'Memória desabilitada';
-      const facts = await longTerm.listUserFacts(getUserId(), limit ?? 50);
-      return JSON.stringify(facts);
+      const [summary, keys] = await Promise.all([
+        longTerm.getUserProfileSummary(getUserId()),
+        longTerm.getUserProfileKeys(getUserId()),
+      ]);
+      return JSON.stringify({ summary, keys });
     },
   });
 
