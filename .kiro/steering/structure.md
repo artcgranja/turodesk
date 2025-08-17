@@ -11,11 +11,10 @@ turodesk/
 │   ├── global.d.ts        # Global type definitions
 │   ├── backend/           # Backend logic
 │   │   ├── ipc.ts         # IPC handlers registration
-│   │   ├── db.ts          # Database utilities
+│   │   ├── db/            # Database operations
+│   │   │   └── queries.ts # SQL queries and database models
 │   │   ├── agent/         # AI agent configuration
 │   │   ├── chat/          # Chat management
-│   │   ├── memory/        # Memory storage (unused currently)
-│   │   ├── store/         # Data persistence (unused currently)
 │   │   └── tools/         # LangChain tools
 │   ├── styles/            # CSS source files
 │   │   └── tailwind.css   # Tailwind entry point
@@ -47,12 +46,13 @@ turodesk/
 - **Tools** (`src/backend/tools/`): LangChain tools for memory and functionality
 
 ### Data Storage Patterns
-- **PostgreSQL (Primary)**: LangGraph checkpoints for conversation history
-- **Local Files (Backup)**: JSON-based fallback storage in user data directory
-- **Session Management**: Persistent session metadata in `sessions.json`
-- **Chat History Backup**: Per-session history files in `history/` subdirectory
-- **User Identity**: Stable UUID stored in `user.json`
-- **Long-term Memory**: PostgreSQL with pgvector for embeddings
+- **PostgreSQL (Primary)**: Complete relational database with users, chats, and LangGraph checkpoints
+- **User Management**: `users` table with UUID primary keys
+- **Chat Management**: `chats` table with foreign key to users and title management
+- **Conversation History**: LangGraph checkpoints linked to chat sessions
+- **Long-term Memory**: PostgreSQL with pgvector for embeddings, linked to users and chats
+- **Local Files (Backup)**: JSON-based fallback storage for chat history
+- **User Identity**: Stable UUID stored locally and synchronized with database
 
 ## File Naming Conventions
 

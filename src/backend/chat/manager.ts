@@ -4,6 +4,7 @@ import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages';
 import { TurodeskAgent } from '../agent';
+import { DatabaseQueries, type User, type Chat } from '../db/queries';
 import type { ChatMessage, ChatSessionMeta } from './types';
 import { Pool } from 'pg';
 
@@ -16,32 +17,26 @@ function ensureDir(dir: string): void {
 }
 
 export class ChatManager {
-	private sessionsFile: string;
-	private sessions: ChatSessionMeta[] = [];
+	private sessionsFile: string; // Mantido para backup/migração
 	private userId: string;
+	private user: User | null = null;
 	private agent: TurodeskAgent | null = null;
 	private dbPool: Pool | null = null;
+	private db: DatabaseQueries | null = null;
 
 	constructor() {
 		const base = path.join(userDataPath(), 'turodesk');
 		ensureDir(base);
 		this.sessionsFile = path.join(base, 'sessions.json');
-		if (fs.existsSync(this.sessionsFile)) {
-			try {
-				this.sessions = JSON.parse(fs.readFileSync(this.sessionsFile, 'utf8'));
-			} catch {
-				this.sessions = [];
-			}
-		}
 
 		// Define um userId estável local (persistido em disco)
 		const uidPath = path.join(base, 'user.json');
 		if (fs.existsSync(uidPath)) {
 			try {
 				const data = JSON.parse(fs.readFileSync(uidPath, 'utf8')) as { userId?: string };
-				this.userId = data.userId || 'local_user';
+				this.userId = data.userId || uuidv4();
 			} catch {
-				this.userId = 'local_user';
+				this.userId = uuidv4();
 			}
 		} else {
 			this.userId = uuidv4();
@@ -73,6 +68,13 @@ export class ChatManager {
 			await this.dbPool.query('SELECT 1');
 			console.log('PostgreSQL connected successfully');
 
+			// Initialize database queries
+			this.db = new DatabaseQueries(this.dbPool);
+
+			// Ensure user exists in database
+			this.user = await this.db.ensureUserExists(this.userId);
+			console.log('User initialized:', this.user.id);
+
 			// Initialize agent with PostgreSQL
 			this.agent = await TurodeskAgent.create({
 				apiKey,
@@ -89,32 +91,67 @@ export class ChatManager {
 		}
 	}
 
-	listSessions(): ChatSessionMeta[] {
-		return [...this.sessions].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+	async listSessions(): Promise<ChatSessionMeta[]> {
+		if (!this.db || !this.user) {
+			throw new Error('Database not initialized');
+		}
+
+		const chats = await this.db.getChatsByUserId(this.user.id);
+		return chats.map(chat => ({
+			id: chat.id,
+			title: chat.title,
+			createdAt: chat.created_at,
+			updatedAt: chat.updated_at
+		}));
 	}
 
-	renameSession(sessionId: string, title: string): ChatSessionMeta {
-		const s = this.sessions.find((x) => x.id === sessionId);
-		if (!s) throw new Error('Sessão não encontrada');
-		s.title = title || s.title;
-		s.updatedAt = new Date().toISOString();
-		this.persistSessions();
-		return s;
+	async renameSession(sessionId: string, title: string): Promise<ChatSessionMeta> {
+		if (!this.db) {
+			throw new Error('Database not initialized');
+		}
+
+		const updatedChat = await this.db.updateChatTitle(sessionId, title);
+		if (!updatedChat) {
+			throw new Error('Sessão não encontrada');
+		}
+
+		return {
+			id: updatedChat.id,
+			title: updatedChat.title,
+			createdAt: updatedChat.created_at,
+			updatedAt: updatedChat.updated_at
+		};
 	}
 
-	createSession(title?: string): ChatSessionMeta {
-		const now = new Date().toISOString();
-		const session: ChatSessionMeta = { id: uuidv4(), title: title || 'Nova conversa', createdAt: now, updatedAt: now };
-		this.sessions.push(session);
-		this.persistSessions();
-		return session;
+	async createSession(title?: string): Promise<ChatSessionMeta> {
+		if (!this.db || !this.user) {
+			throw new Error('Database not initialized');
+		}
+
+		const chat = await this.db.createChat(this.user.id, title);
+		return {
+			id: chat.id,
+			title: chat.title,
+			createdAt: chat.created_at,
+			updatedAt: chat.updated_at
+		};
 	}
 
-	deleteSession(sessionId: string): void {
-		this.sessions = this.sessions.filter((s) => s.id !== sessionId);
-		this.persistSessions();
+	async deleteSession(sessionId: string): Promise<void> {
+		if (!this.db) {
+			throw new Error('Database not initialized');
+		}
+
+		const deleted = await this.db.deleteChat(sessionId);
+		if (!deleted) {
+			throw new Error('Sessão não encontrada');
+		}
+
+		// Remove backup local history file
 		const histPath = this.historyPath(sessionId);
-		if (fs.existsSync(histPath)) fs.rmSync(histPath, { force: true, recursive: true });
+		if (fs.existsSync(histPath)) {
+			fs.rmSync(histPath, { force: true, recursive: true });
+		}
 	}
 
 	async getMessages(sessionId: string): Promise<ChatMessage[]> {
@@ -150,24 +187,27 @@ export class ChatManager {
 	}
 
 	async sendMessage(sessionId: string, input: string): Promise<ChatMessage> {
-		const session = this.sessions.find((s) => s.id === sessionId);
-		if (!session) throw new Error('Sessão não encontrada');
+		if (!this.db || !this.agent) {
+			throw new Error('Database or Agent not initialized');
+		}
 
-		if (!this.agent) {
-			throw new Error('Agent not initialized - PostgreSQL connection required');
+		// Verify chat exists
+		const chat = await this.db.getChatById(sessionId);
+		if (!chat) {
+			throw new Error('Sessão não encontrada');
 		}
 
 		try {
 			const outputMsg = await this.agent.sendMessage(sessionId, input);
+
+			// Update chat timestamp
+			await this.db.updateChatTimestamp(sessionId);
 
 			// Persist history locally as backup
 			this.appendToHistory(sessionId, [
 				{ role: 'user', content: input, createdAt: new Date().toISOString() },
 				{ role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() },
 			]);
-
-			session.updatedAt = new Date().toISOString();
-			this.persistSessions();
 
 			return { role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() };
 
@@ -182,11 +222,14 @@ export class ChatManager {
 		input: string,
 		onToken: (token: string) => void
 	): Promise<ChatMessage> {
-		const session = this.sessions.find((s) => s.id === sessionId);
-		if (!session) throw new Error('Sessão não encontrada');
+		if (!this.db || !this.agent) {
+			throw new Error('Database or Agent not initialized');
+		}
 
-		if (!this.agent) {
-			throw new Error('Agent not initialized - PostgreSQL connection required');
+		// Verify chat exists
+		const chat = await this.db.getChatById(sessionId);
+		if (!chat) {
+			throw new Error('Sessão não encontrada');
 		}
 
 		try {
@@ -203,14 +246,14 @@ export class ChatManager {
 				priorAsBase
 			);
 
+			// Update chat timestamp
+			await this.db.updateChatTimestamp(sessionId);
+
 			// Persist history locally as backup
 			this.appendToHistory(sessionId, [
 				{ role: 'user', content: input, createdAt: new Date().toISOString() },
 				{ role: 'assistant', content: finalText, createdAt: new Date().toISOString() },
 			]);
-
-			session.updatedAt = new Date().toISOString();
-			this.persistSessions();
 
 			return { role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
 
@@ -226,9 +269,7 @@ export class ChatManager {
 		return path.join(base, `${sessionId}.json`);
 	}
 
-	private persistSessions(): void {
-		fs.writeFileSync(this.sessionsFile, JSON.stringify(this.sessions, null, 2), 'utf8');
-	}
+
 
 	private appendToHistory(sessionId: string, messages: ChatMessage[]): void {
 		const p = this.historyPath(sessionId);

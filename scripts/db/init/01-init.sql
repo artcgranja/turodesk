@@ -46,10 +46,33 @@ CREATE INDEX IF NOT EXISTS idx_checkpoints_created_at ON checkpoints(created_at)
 CREATE INDEX IF NOT EXISTS idx_checkpoint_blobs_thread_id ON checkpoint_blobs(thread_id);
 CREATE INDEX IF NOT EXISTS idx_checkpoint_writes_thread_id ON checkpoint_writes(thread_id);
 
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT UNIQUE,
+  email TEXT UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Chats table (relacionada com users)
+CREATE TABLE IF NOT EXISTS chats (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT 'Nova conversa',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id);
+CREATE INDEX IF NOT EXISTS idx_chats_updated_at ON chats(updated_at DESC);
+
 -- long-term memory schema (pgvector) per AI Context doc
 CREATE TABLE IF NOT EXISTS long_term_memories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
   embedding vector(1536),
   metadata JSONB DEFAULT '{}',
@@ -60,6 +83,7 @@ CREATE TABLE IF NOT EXISTS long_term_memories (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_memories_user_id ON long_term_memories(user_id);
+CREATE INDEX IF NOT EXISTS idx_memories_chat_id ON long_term_memories(chat_id);
 DO $$ BEGIN
   CREATE INDEX idx_memories_embedding ON long_term_memories USING hnsw (embedding vector_cosine_ops);
 EXCEPTION WHEN duplicate_table THEN NULL; END $$;

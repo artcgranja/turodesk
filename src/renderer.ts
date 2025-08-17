@@ -218,14 +218,116 @@ async function onDelete(id: string): Promise<void> {
 	render();
 }
 
+function showInputModal(title: string, placeholder: string, defaultValue: string = ''): Promise<string | null> {
+	return new Promise((resolve) => {
+		// Create modal overlay
+		const overlay = document.createElement('div');
+		overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fadeIn';
+		
+		// Create modal content
+		const modal = document.createElement('div');
+		modal.className = 'bg-white dark:bg-gray-800 rounded-lg p-6 w-96 max-w-full mx-4 shadow-xl border dark:border-gray-700 animate-scaleIn';
+		
+		// Create form
+		const form = document.createElement('form');
+		form.innerHTML = `
+			<h3 class="text-lg font-semibold mb-4 text-gray-900 dark:text-white">${title}</h3>
+			<input 
+				type="text" 
+				class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white mb-4 transition-colors"
+				placeholder="${placeholder}"
+				value="${defaultValue}"
+				maxlength="100"
+				autofocus
+			>
+			<div class="flex justify-end space-x-3">
+				<button type="button" class="cancel-btn px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+					Cancelar
+				</button>
+				<button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+					Confirmar
+				</button>
+			</div>
+		`;
+		
+		const input = form.querySelector('input') as HTMLInputElement;
+		const cancelBtn = form.querySelector('.cancel-btn') as HTMLButtonElement;
+		const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+		
+		// Update submit button state based on input
+		const updateSubmitState = () => {
+			const hasValue = input.value.trim().length > 0;
+			submitBtn.disabled = !hasValue;
+			submitBtn.className = hasValue 
+				? 'px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors'
+				: 'px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 rounded-md cursor-not-allowed transition-colors';
+		};
+		
+		input.addEventListener('input', updateSubmitState);
+		updateSubmitState();
+		
+		// Handle form submission
+		form.addEventListener('submit', (e) => {
+			e.preventDefault();
+			const value = input.value.trim();
+			if (!value) return;
+			document.body.removeChild(overlay);
+			resolve(value);
+		});
+		
+		// Handle cancel
+		cancelBtn.addEventListener('click', () => {
+			document.body.removeChild(overlay);
+			resolve(null);
+		});
+		
+		// Handle escape key
+		overlay.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape') {
+				document.body.removeChild(overlay);
+				resolve(null);
+			}
+		});
+		
+		// Handle click outside modal
+		overlay.addEventListener('click', (e) => {
+			if (e.target === overlay) {
+				document.body.removeChild(overlay);
+				resolve(null);
+			}
+		});
+		
+		modal.appendChild(form);
+		overlay.appendChild(modal);
+		document.body.appendChild(overlay);
+		
+		// Focus input after a brief delay
+		setTimeout(() => {
+			input.focus();
+			input.select();
+		}, 100);
+	});
+}
+
 async function onRename(id: string): Promise<void> {
 	const current = state.sessions.find((s) => s.id === id);
-	const newTitle = prompt('Novo nome da conversa', current?.title || '');
+	const newTitle = await showInputModal(
+		'Renomear Conversa', 
+		'Digite o novo nome da conversa', 
+		current?.title || ''
+	);
+	
 	if (!newTitle) return;
-	const updated = await window.turodesk.chats.rename(id, newTitle);
-	const idx = state.sessions.findIndex((s) => s.id === id);
-	if (idx >= 0) state.sessions[idx] = updated;
-	render();
+	
+	try {
+		const updated = await window.turodesk.chats.rename(id, newTitle);
+		const idx = state.sessions.findIndex((s) => s.id === id);
+		if (idx >= 0) state.sessions[idx] = updated;
+		render();
+	} catch (error) {
+		console.error('Failed to rename chat:', error);
+		// You could show an error modal here if needed
+	}
 }
 
 function getCurrentTitle(): string {
