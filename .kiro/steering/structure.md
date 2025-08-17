@@ -39,20 +39,22 @@ turodesk/
 - **Renderer Process** (`src/renderer.ts`): UI logic, DOM manipulation, user interactions
 
 ### Backend Organization
-- **IPC Layer** (`src/backend/ipc.ts`): Handles all inter-process communication
+- **IPC Layer** (`src/backend/ipc.ts`): Handles all inter-process communication including auth
 - **Chat Manager** (`src/backend/chat/manager.ts`): Session management and coordination with agent
 - **Agent System** (`src/backend/agent/index.ts`): Complete AI agent with PostgreSQL integration
+- **Authentication** (`src/backend/auth/github.ts`): GitHub OAuth with persistent sessions
+- **Database Queries** (`src/backend/db/queries.ts`): Type-safe database operations
 - **System Prompts** (`src/backend/agent/systemPrompt.ts`): Dynamic system prompt generation
 - **Tools** (`src/backend/tools/`): LangChain tools for memory and functionality
 
 ### Data Storage Patterns
 - **PostgreSQL (Primary)**: Complete relational database with users, chats, and LangGraph checkpoints
-- **User Management**: `users` table with UUID primary keys
-- **Chat Management**: `chats` table with foreign key to users and title management
-- **Conversation History**: LangGraph checkpoints linked to chat sessions
+- **User Management**: `users` table with UUID primary keys and GitHub OAuth integration
+- **Chat Management**: `chats` table with foreign key to users and editable titles
+- **Conversation History**: LangGraph checkpoints linked to chat sessions via thread_id
 - **Long-term Memory**: PostgreSQL with pgvector for embeddings, linked to users and chats
-- **Local Files (Backup)**: JSON-based fallback storage for chat history
-- **User Identity**: Stable UUID stored locally and synchronized with database
+- **Authentication State**: Local JSON file with automatic persistence and validation
+- **Local Files (Backup)**: JSON-based fallback storage for chat history and session metadata
 
 ## File Naming Conventions
 

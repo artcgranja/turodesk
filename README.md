@@ -1,43 +1,43 @@
 ## Turodesk
 
-Aplicação desktop minimalista construída com Electron, TypeScript e Tailwind CSS, focada em conversas assistidas por IA com memória local. O app oferece:
+Minimalist desktop application built with Electron, TypeScript and Tailwind CSS, focused on AI-assisted conversations with local memory. The app offers:
 
-- Interface de chat com sessões (criar, listar, renomear, apagar)
-- Respostas por streaming de tokens
-- Memória longa baseada em embeddings armazenada em disco (JSON)
-- Integração opcional com OpenAI via LangGraph
+- Chat interface with sessions (create, list, rename, delete)
+- Token streaming responses
+- Long-term memory based on embeddings stored on disk (JSON)
+- Optional OpenAI integration via LangGraph
 
 ### Stack
 - Electron (Main/Preload/Renderer)
 - TypeScript
 - Tailwind CSS (build via `tailwindcss`)
 - Bundler: `esbuild`
-- LangGraph (`@langchain/langgraph`) com OpenAI (`@langchain/openai`)
-- Renderização de Markdown: `marked` + sanitização com `dompurify`
+- LangGraph (`@langchain/langgraph`) with OpenAI (`@langchain/openai`)
+- Markdown rendering: `marked` + sanitization with `dompurify`
 
 ---
 
-## Requisitos
-- Node.js 18+ (recomendado 20+)
+## Requirements
+- Node.js 18+ (recommended 20+)
 - npm 9+
 - macOS/Windows/Linux
-- Docker + Docker Compose (para PostgreSQL e Redis)
-- PostgreSQL 15+ (se não usar Docker)
+- Docker + Docker Compose (for PostgreSQL and Redis)
+- PostgreSQL 15+ (if not using Docker)
 
 ---
 
-## Instalação
+## Installation
 ```bash
 npm install
 ```
 
-Crie um arquivo `.env` na raiz (copie de `.env.example`):
+Create a `.env` file in the root (copy from `.env.example`):
 ```env
-# OpenAI (obrigatório para IA)
-OPENAI_API_KEY=coloque_sua_chave_aqui
+# OpenAI (required for AI)
+OPENAI_API_KEY=your-api-key-here
 OPENAI_MODEL=gpt-4o-mini
 
-# PostgreSQL (obrigatório)
+# PostgreSQL (required)
 DATABASE_URI=postgresql://turodesk:turodesk@localhost:5432/turodesk
 POSTGRES_DB=turodesk
 POSTGRES_USER=turodesk
@@ -45,43 +45,43 @@ POSTGRES_PASSWORD=turodesk
 POSTGRES_PORT=5432
 ```
 
-**Importante**: PostgreSQL é agora obrigatório para o funcionamento completo do app, pois armazena o histórico de conversas via LangGraph checkpoint.
+**Important**: PostgreSQL is now mandatory for the complete functioning of the app, as it stores conversation history via LangGraph checkpoint.
 
 ---
 
 ## Scripts
 
-### Desenvolvimento
+### Development
 ```bash
-# 1. Subir PostgreSQL e Redis
+# 1. Start PostgreSQL and Redis
 docker compose up -d
 
-# 2. Instalar dependências
+# 2. Install dependencies
 npm install
 
-# 3. Criar arquivo .env (copiar de .env.example)
+# 3. Create .env file (copy from .env.example)
 cp .env.example .env
 
-# 4. Iniciar desenvolvimento
+# 4. Start development
 npm run dev
 ```
 
-### Produção
+### Production
 ```bash
-# 1. Subir serviços
+# 1. Start services
 docker compose up -d
 
-# 2. Build da aplicação
+# 2. Build application
 npm run build
 
-# 3. Iniciar aplicação
+# 3. Start application
 npm start
 ```
 
-### Scripts disponíveis
-- `npm run build`: limpa e gera `dist/` para main, preload, renderer e CSS
-- `npm run dev`: modo desenvolvimento com watch e Electron em hot reload
-- `npm start`: inicia apenas o Electron com os artefatos já compilados em `dist/`
+### Available scripts
+- `npm run build`: clean and generate `dist/` for main, preload, renderer and CSS
+- `npm run dev`: development mode with watch and Electron hot reload
+- `npm start`: start only Electron with artifacts already compiled in `dist/`
 
 ---
 
@@ -110,46 +110,46 @@ turodesk/
 
 ---
 
-## Arquitetura e fluxo
-- `src/main.ts` cria a janela, configura `preload.js` com `contextIsolation: true` e registra IPC.
-- `src/preload.ts` expõe, via `contextBridge`, a API `window.turodesk.chats` (list/create/delete/rename/messages/send/sendStream) sem habilitar `nodeIntegration` no renderer.
-- `src/backend/ipc.ts` recebe as chamadas do renderer e delega para `ChatManager`.
+## Architecture and flow
+- `src/main.ts` creates the window, configures `preload.js` with `contextIsolation: true` and registers IPC.
+- `src/preload.ts` exposes, via `contextBridge`, the API `window.turodesk.chats` (list/create/delete/rename/messages/send/sendStream) without enabling `nodeIntegration` in the renderer.
+- `src/backend/ipc.ts` receives calls from the renderer and delegates to `ChatManager`.
 - `src/backend/chat/manager.ts`:
-  - Gerencia sessões (arquivo `sessions.json` em `userData/turodesk/`)
-  - **Histórico persistente via PostgreSQL**: usando `PostgresSaver` do LangGraph para checkpoint
-  - **Fallback local**: arquivos JSON como backup quando PostgreSQL não está disponível
-  - Memória longa: embeddings via OpenAI (`text-embedding-3-small`) armazenados no PostgreSQL
-  - Geração de respostas com LangGraph (`StateGraph` + `ChatPromptTemplate`)
-  - Streaming real de tokens quando `OPENAI_API_KEY` está definido
+  - Manages sessions (`sessions.json` file in `userData/turodesk/`)
+  - **Persistent history via PostgreSQL**: using LangGraph's `PostgresSaver` for checkpoint
+  - **Local fallback**: JSON files as backup when PostgreSQL is not available
+  - Long-term memory: embeddings via OpenAI (`text-embedding-3-small`) stored in PostgreSQL
+  - Response generation with LangGraph (`StateGraph` + `ChatPromptTemplate`)
+  - Real token streaming when `OPENAI_API_KEY` is defined
 
-### Persistência de dados:
-1. **Primário**: PostgreSQL via LangGraph checkpoint (histórico de conversas)
-2. **Secundário**: Arquivos JSON locais (sessões e backup)
-3. **Memória longa**: PostgreSQL com pgvector (embeddings)
-
----
-
-## Estilos (Tailwind)
-- Entrada: `src/styles/tailwind.css`
-- Saída: `dist/styles.css` via `npm run build:css` (parte do `npm run build`)
-- `tailwind.config.js` inclui `@tailwindcss/typography` e escaneia `index.html` e `src/**/*.{ts,tsx,js,jsx,html}`
+### Data persistence:
+1. **Primary**: PostgreSQL via LangGraph checkpoint (conversation history)
+2. **Secondary**: Local JSON files (sessions and backup)
+3. **Long-term memory**: PostgreSQL with pgvector (embeddings)
 
 ---
 
-## Segurança
+## Styles (Tailwind)
+- Input: `src/styles/tailwind.css`
+- Output: `dist/styles.css` via `npm run build:css` (part of `npm run build`)
+- `tailwind.config.js` includes `@tailwindcss/typography` and scans `index.html` and `src/**/*.{ts,tsx,js,jsx,html}`
+
+---
+
+## Security
 - `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`
-- `preload.ts` expõe API mínima e tipada para o renderer
-- CSP no `index.html`
-- Conteúdo markdown sanitizado com `dompurify`
+- `preload.ts` exposes minimal and typed API to the renderer
+- CSP in `index.html`
+- Markdown content sanitized with `dompurify`
 
 ---
 
-## Variáveis de ambiente
-- `OPENAI_API_KEY`: chave da OpenAI (opcional, mas necessária para respostas inteligentes)
-- `OPENAI_MODEL`: modelo (opcional, padrão `gpt-4o-mini`)
-- (Docker) `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` (apenas para o serviço opcional)
+## Environment variables
+- `OPENAI_API_KEY`: OpenAI key (optional, but necessary for intelligent responses)
+- `OPENAI_MODEL`: model (optional, default `gpt-4o-mini`)
+- (Docker) `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` (only for the optional service)
 
-Exemplo `.env`:
+Example `.env`:
 ```env
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
@@ -158,15 +158,15 @@ POSTGRES_PORT=5432
 
 ---
 
-## Banco de dados (obrigatório)
-O `docker-compose.yml` provisiona PostgreSQL e Redis necessários para o funcionamento do app.
+## Database (required)
+The `docker-compose.yml` provisions PostgreSQL and Redis necessary for the app to function.
 
-### Subir os serviços:
+### Start services:
 ```bash
 docker compose up -d
 ```
 
-### Credenciais padrão:
+### Default credentials:
 ```
 Host: localhost
 Port: 5432
@@ -175,37 +175,37 @@ Password: turodesk
 Database: turodesk
 ```
 
-### Personalizar porta (se necessário):
+### Customize port (if necessary):
 ```bash
 POSTGRES_PORT=5433 docker compose up -d
 ```
 
-### Verificar status:
+### Check status:
 ```bash
 docker compose ps
 ```
 
 ---
 
-## Dicas de uso
-- Crie uma conversa e envie mensagens. Com `OPENAI_API_KEY` configurada, você verá tokens chegando em tempo real.
-- Pesquise e gerencie sessões na barra lateral (renomear/apagar).
-- Blocos de código nas respostas têm botão de copiar.
+## Usage tips
+- Create a conversation and send messages. With `OPENAI_API_KEY` configured, you'll see tokens arriving in real time.
+- Search and manage sessions in the sidebar (rename/delete).
+- Code blocks in responses have a copy button.
 
 ---
 
 ## Troubleshooting
-- **Tela em branco**: rode `npm run build` antes de `npm start` (ou use `npm run dev`).
-- **Sem respostas de IA**: verifique `.env` e conectividade de rede.
-- **Estilos não aplicados**: cheque se `dist/styles.css` foi gerado (`npm run build:css`).
-- **Erro de conexão PostgreSQL**: 
-  - Verifique se o Docker está rodando: `docker compose ps`
-  - Verifique se a `DATABASE_URI` no `.env` está correta
-  - Reinicie os serviços: `docker compose restart`
-- **Histórico perdido**: o app faz fallback para arquivos JSON locais se PostgreSQL falhar.
+- **Blank screen**: run `npm run build` before `npm start` (or use `npm run dev`).
+- **No AI responses**: check `.env` and network connectivity.
+- **Styles not applied**: check if `dist/styles.css` was generated (`npm run build:css`).
+- **PostgreSQL connection error**: 
+  - Check if Docker is running: `docker compose ps`
+  - Check if `DATABASE_URI` in `.env` is correct
+  - Restart services: `docker compose restart`
+- **Lost history**: the app falls back to local JSON files if PostgreSQL fails.
 
 ---
 
-## Licença
+## License
 MIT
 

@@ -92,16 +92,19 @@ Located in `src/backend/db/queries.ts`, this class provides:
 
 ## Data Flow
 
-1. **User Initialization**: App creates or retrieves user on startup
-2. **Chat Management**: All chats linked to authenticated user
-3. **Conversation Storage**: LangGraph checkpoints use chat IDs as thread IDs
-4. **Memory Integration**: Long-term memories linked to both user and chat
-5. **Backup Strategy**: Local JSON files maintained as fallback
+1. **User Authentication**: GitHub OAuth or local user initialization
+2. **Session Persistence**: Authentication state saved locally with 30-day expiration
+3. **Chat Management**: All chats linked to authenticated user with relational integrity
+4. **Conversation Storage**: LangGraph checkpoints use chat IDs as thread IDs
+5. **Memory Integration**: Long-term memories linked to both user and chat
+6. **Backup Strategy**: Local JSON files maintained as fallback
 
 ## Migration Strategy
 
 The system maintains backward compatibility:
-- Local user.json file provides stable user ID
+- Local user.json file provides stable user ID for fallback
+- GitHub OAuth creates or updates users in database
+- Authentication state persisted locally for seamless experience
 - Existing chat history migrated on first run
 - Graceful fallback to local storage if database unavailable
 

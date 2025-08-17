@@ -23,6 +23,13 @@ export function registerIPC(): void {
 		if (wc && !wc.isDestroyed()) wc.send('chats:done', { id, full });
 		return res;
 	});
+
+	// Authentication handlers
+	ipcMain.handle('auth:loginGitHub', async (_e, useExternalBrowser?: boolean) => manager.loginWithGitHub(useExternalBrowser));
+	ipcMain.handle('auth:logout', async () => manager.logout());
+	ipcMain.handle('auth:getState', () => manager.getAuthState());
+	ipcMain.handle('auth:getCurrentUser', () => manager.getCurrentUser());
+	ipcMain.handle('auth:refresh', async () => manager.refreshAuthState());
 }
 
 export async function cleanup(): Promise<void> {

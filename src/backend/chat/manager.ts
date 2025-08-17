@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages';
 import { TurodeskAgent } from '../agent';
 import { DatabaseQueries, type User, type Chat } from '../db/queries';
+import { GitHubAuth, type AuthState } from '../auth/github';
 import type { ChatMessage, ChatSessionMeta } from './types';
 import { Pool } from 'pg';
 
@@ -23,6 +24,7 @@ export class ChatManager {
 	private agent: TurodeskAgent | null = null;
 	private dbPool: Pool | null = null;
 	private db: DatabaseQueries | null = null;
+	private githubAuth: GitHubAuth | null = null;
 
 	constructor() {
 		const base = path.join(userDataPath(), 'turodesk');
@@ -71,9 +73,20 @@ export class ChatManager {
 			// Initialize database queries
 			this.db = new DatabaseQueries(this.dbPool);
 
-			// Ensure user exists in database
-			this.user = await this.db.ensureUserExists(this.userId);
-			console.log('User initialized:', this.user.id);
+			// Initialize GitHub auth
+			this.githubAuth = new GitHubAuth(this.db);
+
+			// Validate and refresh auth state (checks if user still exists in DB)
+			const authState = await this.githubAuth.validateAndRefreshAuthState();
+			
+			if (authState.isAuthenticated && authState.dbUser) {
+				this.user = authState.dbUser;
+				console.log('Restored authenticated user:', this.user.username || this.user.id);
+			} else {
+				// Fallback to local user
+				this.user = await this.db.ensureUserExists(this.userId);
+				console.log('Local user initialized:', this.user.id);
+			}
 
 			// Initialize agent with PostgreSQL
 			this.agent = await TurodeskAgent.create({
@@ -284,6 +297,65 @@ export class ChatManager {
 		}
 		const next = [...existing, ...messages];
 		fs.writeFileSync(p, JSON.stringify(next, null, 2), 'utf8');
+	}
+
+	// Authentication methods
+	async loginWithGitHub(useExternalBrowser: boolean = true): Promise<AuthState> {
+		if (!this.githubAuth) {
+			throw new Error('GitHub auth not initialized');
+		}
+
+		const authState = await this.githubAuth.startAuthFlow(useExternalBrowser);
+		if (authState.isAuthenticated && authState.dbUser) {
+			this.user = authState.dbUser;
+			console.log('User authenticated with GitHub:', this.user.username);
+		}
+		return authState;
+	}
+
+	async logout(): Promise<void> {
+		if (this.githubAuth) {
+			await this.githubAuth.logout();
+		}
+		
+		// Fallback to local user
+		if (this.db) {
+			this.user = await this.db.ensureUserExists(this.userId);
+			console.log('Logged out, using local user:', this.user.id);
+		}
+	}
+
+	getAuthState(): AuthState {
+		return this.githubAuth?.getAuthState() || {
+			isAuthenticated: false,
+			user: null,
+			dbUser: null
+		};
+	}
+
+	getCurrentUser(): User | null {
+		return this.user;
+	}
+
+	async refreshAuthState(): Promise<AuthState> {
+		if (!this.githubAuth) {
+			return {
+				isAuthenticated: false,
+				user: null,
+				dbUser: null
+			};
+		}
+
+		const authState = await this.githubAuth.validateAndRefreshAuthState();
+		
+		if (authState.isAuthenticated && authState.dbUser) {
+			this.user = authState.dbUser;
+		} else if (this.db) {
+			// Fallback to local user
+			this.user = await this.db.ensureUserExists(this.userId);
+		}
+
+		return authState;
 	}
 
 	async cleanup(): Promise<void> {

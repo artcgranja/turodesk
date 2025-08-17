@@ -19,6 +19,25 @@ declare global {
 				upsertFact: (key: string, content: string, tags?: string[]) => Promise<void>;
 				deleteFact: (key: string) => Promise<number>;
 			};
+			auth: {
+				loginWithGitHub: (useExternalBrowser?: boolean) => Promise<{
+					isAuthenticated: boolean;
+					user: { id: number; login: string; name: string; email: string; avatar_url: string } | null;
+					dbUser: { id: string; username?: string; email?: string; created_at: string; updated_at: string } | null;
+				}>;
+				logout: () => Promise<void>;
+				getState: () => Promise<{
+					isAuthenticated: boolean;
+					user: { id: number; login: string; name: string; email: string; avatar_url: string } | null;
+					dbUser: { id: string; username?: string; email?: string; created_at: string; updated_at: string } | null;
+				}>;
+				getCurrentUser: () => Promise<{ id: string; username?: string; email?: string; created_at: string; updated_at: string } | null>;
+				refresh: () => Promise<{
+					isAuthenticated: boolean;
+					user: { id: number; login: string; name: string; email: string; avatar_url: string } | null;
+					dbUser: { id: string; username?: string; email?: string; created_at: string; updated_at: string } | null;
+				}>;
+			};
 		};
 	}
 }

@@ -85,13 +85,21 @@ LANGSMITH_PROJECT=turodesk
 1. Start services: `docker compose up -d`
 2. Install dependencies: `npm install`
 3. Create `.env` file: `cp .env.example .env`
-4. Configure OpenAI API key in `.env`
+4. Configure OpenAI API key and GitHub OAuth credentials in `.env`
 5. Run development: `npm run dev`
 6. For production: `npm run build && npm start`
 
 ## Docker Services
 
 Required PostgreSQL and Redis services via `docker-compose.yml`:
-- **PostgreSQL**: Stores LangGraph checkpoints and long-term memory
+- **PostgreSQL**: Stores LangGraph checkpoints, user data, and long-term memory
 - **Redis**: Used by LangGraph API service
 - **LangGraph API**: Optional external API service
+
+## Authentication Setup
+
+For GitHub OAuth integration:
+1. Create GitHub OAuth App at [GitHub Developer Settings](https://github.com/settings/developers)
+2. Set callback URL to `http://localhost:3000/callback`
+3. Add `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` to `.env`
+4. See `GITHUB_OAUTH_SETUP.md` for detailed instructions

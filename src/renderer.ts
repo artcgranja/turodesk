@@ -13,9 +13,21 @@ const state = {
 	search: '' as string,
 	subscriptionsBound: false,
 	sidebarOpen: false as boolean,
+	authState: {
+		isAuthenticated: false,
+		user: null,
+		dbUser: null,
+	} as {
+		isAuthenticated: boolean;
+		user: { id: number; login: string; name: string; email: string; avatar_url: string } | null;
+		dbUser: { id: string; username?: string; email?: string; created_at: string; updated_at: string } | null;
+	},
 };
 
 async function boot(): Promise<void> {
+	// Load and refresh auth state first (validates saved session)
+	state.authState = await window.turodesk.auth.refresh();
+	
 	state.sessions = await window.turodesk.chats.list();
 	state.mode = 'intro';
 	// Não seleciona chat por padrão na tela de home
@@ -71,11 +83,14 @@ async function render(): Promise<void> {
 		currentId: state.currentId,
 		mode: state.mode,
 		search: state.search,
+		authState: state.authState,
 		onNewChat: onNewChat,
 		onSelect: onSelect,
 		onSearchChange: (value: string) => { state.search = value; void render(); },
 		onRename: onRename,
 		onDelete: onDelete,
+		onLogin: onLogin,
+		onLogout: onLogout,
 	});
 
 	// Wrapper do sidebar: overlay no mobile
@@ -327,6 +342,37 @@ async function onRename(id: string): Promise<void> {
 	} catch (error) {
 		console.error('Failed to rename chat:', error);
 		// You could show an error modal here if needed
+	}
+}
+
+async function onLogin(useExternalBrowser: boolean = true): Promise<void> {
+	try {
+		console.log('Starting GitHub login in external browser...');
+		state.authState = await window.turodesk.auth.loginWithGitHub(useExternalBrowser);
+		console.log('Login successful:', state.authState.user?.login);
+		
+		// Refresh sessions after login (user might have different chats)
+		state.sessions = await window.turodesk.chats.list();
+		render();
+	} catch (error) {
+		console.error('Login failed:', error);
+		// You could show an error modal here
+		alert('Login failed: ' + (error as Error).message);
+	}
+}
+
+async function onLogout(): Promise<void> {
+	try {
+		await window.turodesk.auth.logout();
+		state.authState = await window.turodesk.auth.getState();
+		
+		// Refresh sessions after logout (back to local user)
+		state.sessions = await window.turodesk.chats.list();
+		state.currentId = '';
+		state.mode = 'intro';
+		render();
+	} catch (error) {
+		console.error('Logout failed:', error);
 	}
 }
 

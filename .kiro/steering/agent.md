@@ -60,10 +60,11 @@ interface AgentConfig {
 
 The `ChatManager` creates and manages the `TurodeskAgent` instance:
 
-1. **Initialization**: Creates agent with PostgreSQL pool
-2. **Message Routing**: Delegates all AI operations to agent
-3. **Backup Storage**: Maintains local JSON files as backup
-4. **Session Management**: Handles session metadata separately
+1. **Initialization**: Creates agent with PostgreSQL pool after user authentication
+2. **Message Routing**: Delegates all AI operations to agent with user context
+3. **Session Management**: Links conversations to authenticated users
+4. **Backup Storage**: Maintains local JSON files as backup
+5. **Authentication Integration**: Validates user state before agent operations
 
 ## Development Guidelines
 
@@ -71,13 +72,22 @@ The `ChatManager` creates and manages the `TurodeskAgent` instance:
 1. Implement tools in `src/backend/tools/`
 2. Register in `buildMemoryTools()` function
 3. Tools automatically available to ReAct agent
+4. Consider user context in tool implementations
 
 ### Modifying System Prompts
 - Edit `src/backend/agent/systemPrompt.ts`
-- Supports dynamic context (timezone, location)
+- Supports dynamic context (timezone, location, user info)
 - Applied automatically to streaming conversations
+- Can include user-specific context from authentication
 
 ### Database Schema Changes
 - Update `scripts/db/init/01-init.sql`
 - Restart containers to apply changes
 - Agent handles schema setup automatically
+- Consider user relationships in new tables
+
+### Authentication Integration
+- Agent operations require valid user context
+- Tools can access user information via ChatManager
+- Session persistence handled automatically
+- Graceful fallback to local user when needed

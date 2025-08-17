@@ -19,6 +19,13 @@ contextBridge.exposeInMainWorld('turodesk', {
 		upsertFact: (key: string, content: string, tags?: string[]) => ipcRenderer.invoke('mem:upsertFact', key, content, tags),
 		deleteFact: (key: string) => ipcRenderer.invoke('mem:deleteFact', key),
 	},
+	auth: {
+		loginWithGitHub: (useExternalBrowser?: boolean) => ipcRenderer.invoke('auth:loginGitHub', useExternalBrowser),
+		logout: () => ipcRenderer.invoke('auth:logout'),
+		getState: () => ipcRenderer.invoke('auth:getState'),
+		getCurrentUser: () => ipcRenderer.invoke('auth:getCurrentUser'),
+		refresh: () => ipcRenderer.invoke('auth:refresh'),
+	},
 } as const);
 
 
