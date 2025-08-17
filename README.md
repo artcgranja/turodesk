@@ -21,7 +21,8 @@ Aplicação desktop minimalista construída com Electron, TypeScript e Tailwind 
 - Node.js 18+ (recomendado 20+)
 - npm 9+
 - macOS/Windows/Linux
-- (Opcional) Docker + Docker Compose (para o serviço PostgreSQL auxiliar)
+- Docker + Docker Compose (para PostgreSQL e Redis)
+- PostgreSQL 15+ (se não usar Docker)
 
 ---
 
@@ -30,33 +31,57 @@ Aplicação desktop minimalista construída com Electron, TypeScript e Tailwind 
 npm install
 ```
 
-Crie um arquivo `.env` na raiz para habilitar respostas de IA (opcional):
+Crie um arquivo `.env` na raiz (copie de `.env.example`):
 ```env
+# OpenAI (obrigatório para IA)
 OPENAI_API_KEY=coloque_sua_chave_aqui
-# Opcional (default: gpt-4o-mini)
 OPENAI_MODEL=gpt-4o-mini
+
+# PostgreSQL (obrigatório)
+DATABASE_URI=postgresql://turodesk:turodesk@localhost:5432/turodesk
+POSTGRES_DB=turodesk
+POSTGRES_USER=turodesk
+POSTGRES_PASSWORD=turodesk
+POSTGRES_PORT=5432
 ```
 
-Sem `OPENAI_API_KEY`, o app funciona, mas responde com uma mensagem informando que a chave é necessária para respostas inteligentes.
+**Importante**: PostgreSQL é agora obrigatório para o funcionamento completo do app, pois armazena o histórico de conversas via LangGraph checkpoint.
 
 ---
 
 ## Scripts
-- `npm run build`: limpa e gera `dist/` para main, preload, renderer e CSS
-- `npm run dev`: modo desenvolvimento com watch e Electron em hot reload
-  - `dev:main`, `dev:preload`, `dev:renderer`, `dev:css` (scripts internos com watch)
-- `npm start`: inicia apenas o Electron com os artefatos já compilados em `dist/`
 
-Exemplo de desenvolvimento:
+### Desenvolvimento
 ```bash
+# 1. Subir PostgreSQL e Redis
+docker compose up -d
+
+# 2. Instalar dependências
+npm install
+
+# 3. Criar arquivo .env (copiar de .env.example)
+cp .env.example .env
+
+# 4. Iniciar desenvolvimento
 npm run dev
 ```
 
-Build para distribuição local:
+### Produção
 ```bash
+# 1. Subir serviços
+docker compose up -d
+
+# 2. Build da aplicação
 npm run build
+
+# 3. Iniciar aplicação
 npm start
 ```
+
+### Scripts disponíveis
+- `npm run build`: limpa e gera `dist/` para main, preload, renderer e CSS
+- `npm run dev`: modo desenvolvimento com watch e Electron em hot reload
+- `npm start`: inicia apenas o Electron com os artefatos já compilados em `dist/`
 
 ---
 
@@ -91,12 +116,16 @@ turodesk/
 - `src/backend/ipc.ts` recebe as chamadas do renderer e delega para `ChatManager`.
 - `src/backend/chat/manager.ts`:
   - Gerencia sessões (arquivo `sessions.json` em `userData/turodesk/`)
-  - Histórico por sessão usando `FileSystemChatMessageHistory`
-  - Memória longa: embeddings via OpenAI (`text-embedding-3-small`) e armazenamento JSON (`memory/longterm.json`)
+  - **Histórico persistente via PostgreSQL**: usando `PostgresSaver` do LangGraph para checkpoint
+  - **Fallback local**: arquivos JSON como backup quando PostgreSQL não está disponível
+  - Memória longa: embeddings via OpenAI (`text-embedding-3-small`) armazenados no PostgreSQL
   - Geração de respostas com LangGraph (`StateGraph` + `ChatPromptTemplate`)
   - Streaming real de tokens quando `OPENAI_API_KEY` está definido
 
-Sem `OPENAI_API_KEY`, o app persiste o histórico, mas responde com uma mensagem padrão orientando configurar a chave.
+### Persistência de dados:
+1. **Primário**: PostgreSQL via LangGraph checkpoint (histórico de conversas)
+2. **Secundário**: Arquivos JSON locais (sessões e backup)
+3. **Memória longa**: PostgreSQL com pgvector (embeddings)
 
 ---
 
@@ -129,23 +158,31 @@ POSTGRES_PORT=5432
 
 ---
 
-## Banco de dados (opcional, via Docker)
-O `docker-compose.yml` provisiona um PostgreSQL para futuras funcionalidades. O app atual não depende dele para funcionar.
+## Banco de dados (obrigatório)
+O `docker-compose.yml` provisiona PostgreSQL e Redis necessários para o funcionamento do app.
 
-Subir o serviço:
+### Subir os serviços:
 ```bash
 docker compose up -d
-# Ou escolhendo outra porta local
-POSTGRES_PORT=5433 docker compose up -d
 ```
 
-Credenciais padrão:
+### Credenciais padrão:
 ```
 Host: localhost
 Port: 5432
 User: turodesk
 Password: turodesk
 Database: turodesk
+```
+
+### Personalizar porta (se necessário):
+```bash
+POSTGRES_PORT=5433 docker compose up -d
+```
+
+### Verificar status:
+```bash
+docker compose ps
 ```
 
 ---
@@ -158,9 +195,14 @@ Database: turodesk
 ---
 
 ## Troubleshooting
-- Tela em branco: rode `npm run build` antes de `npm start` (ou use `npm run dev`).
-- Sem respostas de IA: verifique `.env` e conectividade de rede.
-- Estilos não aplicados: cheque se `dist/styles.css` foi gerado (`npm run build:css`).
+- **Tela em branco**: rode `npm run build` antes de `npm start` (ou use `npm run dev`).
+- **Sem respostas de IA**: verifique `.env` e conectividade de rede.
+- **Estilos não aplicados**: cheque se `dist/styles.css` foi gerado (`npm run build:css`).
+- **Erro de conexão PostgreSQL**: 
+  - Verifique se o Docker está rodando: `docker compose ps`
+  - Verifique se a `DATABASE_URI` no `.env` está correta
+  - Reinicie os serviços: `docker compose restart`
+- **Histórico perdido**: o app faz fallback para arquivos JSON locais se PostgreSQL falhar.
 
 ---
 

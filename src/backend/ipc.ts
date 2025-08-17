@@ -24,3 +24,7 @@ export function registerIPC(): void {
 		return res;
 	});
 }
+
+export async function cleanup(): Promise<void> {
+	await manager.cleanup();
+}

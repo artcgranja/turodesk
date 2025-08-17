@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import path from 'node:path';
-import { registerIPC } from './backend/ipc';
+import { registerIPC, cleanup } from './backend/ipc';
+
+// Suppress Buffer deprecation warnings from dependencies
+process.noDeprecation = true;
 
 function createMainWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -42,6 +45,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', async () => {
+  await cleanup();
 });
 
 

@@ -1,4 +1,24 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: turodesk_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-turodesk}
+      POSTGRES_USER: ${POSTGRES_USER:-turodesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-turodesk}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-turodesk} -d ${POSTGRES_DB:-turodesk}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   langgraph-redis:
     image: redis:6
     container_name: turodesk_redis
@@ -9,22 +29,23 @@ services:
       timeout: 1s
       retries: 5
 
-  # Postgres removidos
-
-  langgraph-api:
-    image: ${IMAGE_NAME:-busybox}
-    container_name: turodesk_langgraph_api
-    ports:
-      - "8123:8000"
-    depends_on:
-      langgraph-redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
-      # DATABASE_URI e MEM_DATABASE_URI removidas
+  # langgraph-api:
+  #   image: ${IMAGE_NAME:-busybox}
+  #   container_name: turodesk_langgraph_api
+  #   ports:
+  #     - "8123:8000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     langgraph-redis:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
+  #     DATABASE_URI: postgresql://${POSTGRES_USER:-turodesk}:${POSTGRES_PASSWORD:-turodesk}@postgres:5432/${POSTGRES_DB:-turodesk}
 
 volumes:
+  postgres_data:
 
 

@@ -2,17 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
-import { AIMessage, HumanMessage, BaseMessage, SystemMessage } from '@langchain/core/messages';
-import { StateGraph, messagesStateReducer } from '@langchain/langgraph';
-import { createAgent } from '../agent';
-import { getSystemPrompt } from '../agent/systemPrompt';
-import type { DynamicStructuredTool } from '@langchain/core/tools';
-import { buildMemoryTools } from '../tools/memoryTools';
-import { MemorySaver } from '@langchain/langgraph-checkpoint';
+import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages';
+import { TurodeskAgent } from '../agent';
 import type { ChatMessage, ChatSessionMeta } from './types';
-// Long-term memory removida
+import { Pool } from 'pg';
 
 function userDataPath(): string {
 	return app.getPath('userData');
@@ -22,19 +15,12 @@ function ensureDir(dir: string): void {
 	if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-type GraphState = {
-	messages: BaseMessage[];
-};
-
 export class ChatManager {
 	private sessionsFile: string;
 	private sessions: ChatSessionMeta[] = [];
 	private userId: string;
-	private llm: ChatOpenAI | null;
-	private graph: any | null = null;
-	private agent: any | null = null;
-	private tools: DynamicStructuredTool[] = [];
-	private checkpointer: MemorySaver;
+	private agent: TurodeskAgent | null = null;
+	private dbPool: Pool | null = null;
 
 	constructor() {
 		const base = path.join(userDataPath(), 'turodesk');
@@ -62,54 +48,46 @@ export class ChatManager {
 			fs.writeFileSync(uidPath, JSON.stringify({ userId: this.userId }, null, 2), 'utf8');
 		}
 
-		// Checkpointer simplificado em memória
-		this.checkpointer = new MemorySaver();
+		// Initialize PostgreSQL and Agent (both are required)
+		this.initializeAgent();
+	}
 
+	private async initializeAgent(): Promise<void> {
+		const dbUrl = process.env.DATABASE_URI || 'postgresql://turodesk:turodesk@localhost:5432/turodesk';
 		const apiKey = process.env.OPENAI_API_KEY;
-		if (apiKey) {
-			this.llm = new ChatOpenAI({
+
+		if (!apiKey) {
+			throw new Error('OPENAI_API_KEY is required');
+		}
+
+		try {
+			// Initialize PostgreSQL connection
+			this.dbPool = new Pool({
+				connectionString: dbUrl,
+				max: 10,
+				idleTimeoutMillis: 30000,
+				connectionTimeoutMillis: 2000,
+			});
+
+			// Test connection
+			await this.dbPool.query('SELECT 1');
+			console.log('PostgreSQL connected successfully');
+
+			// Initialize agent with PostgreSQL
+			this.agent = await TurodeskAgent.create({
 				apiKey,
 				model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
 				temperature: 0.2,
-				streaming: true,
+				dbPool: this.dbPool
 			});
-			this.graph = this.buildGraph();
-			this.tools = buildMemoryTools();
-			this.agent = createAgent(this.llm, this.tools);
-		} else {
-			this.llm = null;
-			this.graph = null;
-			this.agent = null;
+
+			console.log('Turodesk Agent initialized successfully');
+
+		} catch (error) {
+			console.error('Failed to initialize agent with PostgreSQL:', error);
+			throw new Error('PostgreSQL connection is required for Turodesk to function');
 		}
 	}
-
-	// Helpers de Postgres removidos
-
-	private buildGraph() {
-		if (!this.llm) throw new Error('LLM não configurado');
-		const prompt = ChatPromptTemplate.fromMessages([
-			['system', 'Você é um assistente no app Turodesk. Seja conciso e útil.'],
-			new MessagesPlaceholder('messages'),
-		]);
-
-		const callModel = async (state: GraphState): Promise<Partial<GraphState>> => {
-			const chain = prompt.pipe(this.llm!);
-			const result = await chain.invoke({ messages: state.messages });
-			return { messages: [result] };
-		};
-
-		const builder: any = new (StateGraph as any)({
-			channels: {
-				messages: { reducer: messagesStateReducer, default: () => [] },
-			},
-		} as any);
-		builder.addNode('call_model', callModel);
-		builder.addEdge('__start__', 'call_model');
-		builder.addEdge('call_model', '__end__');
-		return builder.compile({ checkpointer: this.checkpointer });
-	}
-
-	// tools moved to ../tools/memoryTools
 
 	listSessions(): ChatSessionMeta[] {
 		return [...this.sessions].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
@@ -140,7 +118,26 @@ export class ChatManager {
 	}
 
 	async getMessages(sessionId: string): Promise<ChatMessage[]> {
-		// Prefer stored local history if available
+		if (!this.agent) {
+			throw new Error('Agent not initialized');
+		}
+
+		try {
+			// Try to read from PostgreSQL checkpointer first
+			const msgs = await this.agent.getMessages(sessionId);
+			if (msgs.length > 0) {
+				const mapped: ChatMessage[] = msgs.map((m): ChatMessage => ({
+					role: (m._getType() === 'human' ? 'user' : m._getType() === 'ai' ? 'assistant' : 'system') as 'user' | 'assistant' | 'system',
+					content: m.content as string,
+					createdAt: new Date().toISOString(),
+				}));
+				return mapped;
+			}
+		} catch (error) {
+			console.warn('Failed to read from PostgreSQL checkpointer:', error);
+		}
+
+		// Fallback: read from local file history
 		const histPath = this.historyPath(sessionId);
 		if (fs.existsSync(histPath)) {
 			try {
@@ -149,51 +146,35 @@ export class ChatManager {
 			} catch {}
 		}
 
-		// Fallback: read from LangGraph checkpointer
-		const ckpt = await (this.checkpointer as any).get({ configurable: { thread_id: sessionId, checkpoint_ns: 'turodesk' } });
-		const msgs: BaseMessage[] = ckpt?.channel_values?.messages ?? [];
-		const mapped: ChatMessage[] = msgs.map((m): ChatMessage => ({
-			role: (m._getType() === 'human' ? 'user' : m._getType() === 'ai' ? 'assistant' : 'system') as 'user' | 'assistant' | 'system',
-			content: m.content as string,
-			createdAt: new Date().toISOString(),
-		}));
-		// Backfill local history so it persists on next loads
-		try {
-			const histPath = this.historyPath(sessionId);
-			if (!fs.existsSync(histPath) && mapped.length > 0) {
-				fs.writeFileSync(histPath, JSON.stringify(mapped, null, 2), 'utf8');
-			}
-		} catch {}
-		return mapped;
+		return [];
 	}
 
 	async sendMessage(sessionId: string, input: string): Promise<ChatMessage> {
 		const session = this.sessions.find((s) => s.id === sessionId);
 		if (!session) throw new Error('Sessão não encontrada');
 
-		if (!this.graph || !this.llm) {
-			const fallback = 'Configure OPENAI_API_KEY para obter respostas inteligentes.';
-			session.updatedAt = new Date().toISOString();
-			this.persistSessions();
-			return { role: 'assistant', content: fallback, createdAt: new Date().toISOString() };
+		if (!this.agent) {
+			throw new Error('Agent not initialized - PostgreSQL connection required');
 		}
 
-		const result = await this.graph.invoke(
-			{ messages: [new HumanMessage(input)] },
-			{ configurable: { thread_id: sessionId, checkpoint_ns: 'turodesk' } }
-		);
-		const outputMsg = (result.messages[result.messages.length - 1] ?? new AIMessage('')).content as string;
+		try {
+			const outputMsg = await this.agent.sendMessage(sessionId, input);
 
-		// Persist history locally
-		this.appendToHistory(sessionId, [
-			{ role: 'user', content: input, createdAt: new Date().toISOString() },
-			{ role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() },
-		]);
+			// Persist history locally as backup
+			this.appendToHistory(sessionId, [
+				{ role: 'user', content: input, createdAt: new Date().toISOString() },
+				{ role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() },
+			]);
 
-		session.updatedAt = new Date().toISOString();
-		this.persistSessions();
+			session.updatedAt = new Date().toISOString();
+			this.persistSessions();
 
-		return { role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() };
+			return { role: 'assistant', content: outputMsg, createdAt: new Date().toISOString() };
+
+		} catch (error) {
+			console.error('Failed to send message:', error);
+			throw new Error('Failed to send message - check PostgreSQL connection');
+		}
 	}
 
 	async sendMessageStream(
@@ -203,55 +184,41 @@ export class ChatManager {
 	): Promise<ChatMessage> {
 		const session = this.sessions.find((s) => s.id === sessionId);
 		if (!session) throw new Error('Sessão não encontrada');
-		if (!this.llm) {
-			onToken('Configure OPENAI_API_KEY para obter respostas inteligentes.');
-			return { role: 'assistant', content: 'Configure OPENAI_API_KEY para obter respostas inteligentes.', createdAt: new Date().toISOString() };
+
+		if (!this.agent) {
+			throw new Error('Agent not initialized - PostgreSQL connection required');
 		}
 
-		// Não injeta contexto histórico automaticamente; o agente usa tools quando necessário
-		const finalInput = input;
+		try {
+			// Get prior messages for context
+			const prior = await this.getMessages(sessionId);
+			const priorAsBase: BaseMessage[] = prior.map((m) => 
+				m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content)
+			);
 
-		// Streaming real via LangChain callbacks, preservando histórico local manualmente
+			const finalText = await this.agent.sendMessageStream(
+				sessionId, 
+				input, 
+				onToken, 
+				priorAsBase
+			);
 
-		// Usa o agente ReAct com ferramentas expostas; suporta tool calls
-		const prior = await this.getMessages(sessionId);
-		const priorAsBase: BaseMessage[] = [
-			new SystemMessage(getSystemPrompt({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })),
-			...prior.map((m) => (m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content))),
-		];
-		let fullText = '';
-		const streamRes = await this.agent.invoke(
-			{ messages: [...priorAsBase, new HumanMessage(finalInput)] },
-			{
-				configurable: { thread_id: sessionId, checkpoint_ns: 'turodesk' },
-				callbacks: [
-					{
-						handleLLMNewToken: (token: string) => {
-							fullText += token;
-							onToken(token);
-						},
-					},
-				],
-			}
-		);
-		const finalText = fullText || ((streamRes?.messages?.[streamRes.messages.length - 1] as any)?.content as string) || '';
+			// Persist history locally as backup
+			this.appendToHistory(sessionId, [
+				{ role: 'user', content: input, createdAt: new Date().toISOString() },
+				{ role: 'assistant', content: finalText, createdAt: new Date().toISOString() },
+			]);
 
-		// Não salva automaticamente trocas de chat na memória de longo prazo.
-		// Apenas as tools explicitamente chamadas devem persistir memórias importantes.
+			session.updatedAt = new Date().toISOString();
+			this.persistSessions();
 
-		// Persist history locally
-		this.appendToHistory(sessionId, [
-			{ role: 'user', content: input, createdAt: new Date().toISOString() },
-			{ role: 'assistant', content: finalText, createdAt: new Date().toISOString() },
-		]);
+			return { role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
 
-		session.updatedAt = new Date().toISOString();
-		this.persistSessions();
-
-		return { role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
+		} catch (error) {
+			console.error('Failed to send streaming message:', error);
+			throw new Error('Failed to send message - check PostgreSQL connection');
+		}
 	}
-
-	// APIs de memória removidas
 
 	private historyPath(sessionId: string): string {
 		const base = path.join(userDataPath(), 'turodesk', 'history');
@@ -276,5 +243,15 @@ export class ChatManager {
 		}
 		const next = [...existing, ...messages];
 		fs.writeFileSync(p, JSON.stringify(next, null, 2), 'utf8');
+	}
+
+	async cleanup(): Promise<void> {
+		if (this.agent) {
+			await this.agent.cleanup();
+		}
+		if (this.dbPool) {
+			await this.dbPool.end();
+			console.log('PostgreSQL connection pool closed');
+		}
 	}
 }
