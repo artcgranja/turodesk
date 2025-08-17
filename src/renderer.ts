@@ -2,7 +2,7 @@ type ChatSessionMeta = { id: string; title: string; createdAt: string; updatedAt
 
 import { h } from './ui/dom';
 import { renderMarkdownFromRaw, appendTypingCaret } from './ui/markdown';
-import { buildSidebar, buildSidebarRail } from './ui/sidebar';
+import { buildSidebar } from './ui/sidebar';
 import { renderHome } from './ui/home';
 import { renderChat, renderMsg } from './ui/chat';
 
@@ -18,7 +18,8 @@ const state = {
 async function boot(): Promise<void> {
 	state.sessions = await window.turodesk.chats.list();
 	state.mode = 'intro';
-	if (state.sessions.length > 0) state.currentId = state.sessions[0].id;
+	// Não seleciona chat por padrão na tela de home
+	state.currentId = '';
 	// Sidebar aberto por padrão em telas >= md (768px), fechado em telas menores
 	const mql = window.matchMedia('(min-width: 768px)');
 	state.sidebarOpen = mql.matches;
@@ -75,28 +76,16 @@ async function render(): Promise<void> {
 		onSearchChange: (value: string) => { state.search = value; void render(); },
 		onRename: onRename,
 		onDelete: onDelete,
-		onToggleSidebar: () => { state.sidebarOpen = !state.sidebarOpen; void render(); },
-		isOpen: state.sidebarOpen,
 	});
-	const sidebarContentRail = buildSidebarRail(
-		state.sessions,
-		state.currentId,
-		onSelect,
-		() => { state.sidebarOpen = true; void render(); },
-		onNewChat
-	);
 
-	// Wrapper do sidebar: overlay no mobile, coluna no desktop
+	// Wrapper do sidebar: overlay no mobile
 	const sidebarWrap = h('div', {
 		id: 'sidebar-wrap',
 		class: [
-			// Mobile overlay behavior
-			'fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 md:w-full',
-			state.sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full',
-			// Desktop: sempre visível dentro da grid (largura controlada pela grid)
-			'md:block'
+			'fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out md:static md:w-full',
+			state.sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full'
 		].join(' ')
-	}, [state.sidebarOpen ? sidebarContentFull : sidebarContentRail]);
+	}, [sidebarContentFull]);
 
 	// Overlay clicável apenas em mobile quando aberto
 	const overlay = h('div', {
@@ -105,19 +94,57 @@ async function render(): Promise<void> {
 		onclick: () => { state.sidebarOpen = false; void render(); }
 	});
 
-	// Área da direita simples
-	const right = h('div', { class: 'h-full overflow-hidden' });
-	const rightBody = right;
+	// Área da direita com topbar arrastável
+	const right = h('div', { class: 'h-full overflow-hidden grid grid-rows-[auto_1fr]' });
+	const topbar = h('div', {
+		class: 'flex items-center justify-between gap-2 h-10 pl-20 pr-2 md:pr-3 border-b border-black/10 dark:border-white/10 bg-slate-50/80 dark:bg-neutral-950/80 backdrop-blur supports-[backdrop-filter]:bg-white/30',
+		style: '-webkit-app-region: drag'
+	});
+	const leftTop = h('div', { class: 'flex items-center gap-2', style: '-webkit-app-region: no-drag' }, [
+    // botão com estilo solicitado à esquerda do nome
+    h('button', {
+        class: 'inline-flex items-center justify-center relative shrink-0 select-none text-slate-400 border-transparent transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-slate-100 h-8 w-8 rounded-md active:scale-95 group',
+        onclick: () => { state.sidebarOpen = !state.sidebarOpen; void render(); },
+        'aria-label': 'Sidebar',
+        'aria-expanded': String(state.sidebarOpen),
+        'aria-haspopup': 'menu',
+        'data-testid': 'pin-sidebar-toggle',
+        'data-state': state.sidebarOpen ? 'open' : 'closed',
+        title: 'Alternar menu (⌘/Ctrl+B)'
+    }, [
+        h('div', { class: 'relative' }, [
+            h('div', { class: 'flex items-center justify-center group-hover:scale-90 transition scale-100 text-inherit', style: 'width: 20px; height: 20px;' }, [sidebarSymbolIcon()])
+        ])
+    ]),
+    h('div', { class: 'text-sm font-medium text-slate-700 dark:text-slate-300 select-none' }, [getCurrentTitle()])
+]);
+	const rightActions = h('div', { class: 'flex items-center gap-1', style: '-webkit-app-region: no-drag' });
+	if (state.mode === 'chat' && state.currentId) {
+		const menuWrap = h('div', { class: 'relative' });
+		const menuBtn = h('button', { class: 'p-2 rounded-md hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition', title: 'Opções' }, [dotsIcon()]);
+		const menu = h('div', { class: 'hidden absolute right-0 top-full mt-1 w-40 glass-panel p-1 z-50' });
+		menu.appendChild(menuItem('Renomear', () => { void onRename(state.currentId); closeMenu(); }));
+		menu.appendChild(menuItem('Apagar', () => { void onDelete(state.currentId); closeMenu(); }));
+		function toggleMenu(): void { menu.classList.toggle('hidden'); }
+		function closeMenu(): void { menu.classList.add('hidden'); }
+		menuBtn.onclick = (e) => { e.stopPropagation(); toggleMenu(); };
+		window.addEventListener('click', () => closeMenu(), { once: true });
+		menuWrap.appendChild(menuBtn);
+		menuWrap.appendChild(menu);
+		rightActions.appendChild(menuWrap);
+	}
+	topbar.appendChild(leftTop);
+	topbar.appendChild(rightActions);
+	const rightBody = h('div', { class: 'h-full overflow-hidden' });
+	right.appendChild(topbar);
+	right.appendChild(rightBody);
 
-	// Container principal: em mobile não usa grid; em desktop vira grid com/sem coluna conforme estado
-	const main = h('div', {
-		class: [
-			'h-screen relative md:grid bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100',
-			state.sidebarOpen ? 'md:grid-cols-[18rem_1fr]' : 'md:grid-cols-[3.2rem_1fr]'
-		].join(' ')
-	}, [sidebarWrap, right]);
+	// Container principal: sem rail quando fechado
+	const main = state.sidebarOpen
+		? h('div', { class: 'h-screen relative md:grid md:grid-cols-[18rem_1fr] bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [sidebarWrap, right])
+		: h('div', { class: 'h-screen relative bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-100' }, [right]);
 	app.appendChild(main);
-	app.appendChild(overlay);
+	if (state.sidebarOpen) app.appendChild(overlay);
 
 	// Botão flutuante para abrir/fechar sidebar (apenas mobile)
 	const toggleBtn = h('button', {
@@ -134,9 +161,9 @@ async function render(): Promise<void> {
 		// inner icon swap
 		h('div', { class: 'relative' }, [
 			// primary icon
-			h('div', { class: 'flex items-center justify-center group-hover:scale-90 transition scale-100 text-inherit', style: 'width: 20px; height: 20px;' }, [state.sidebarOpen ? closeIcon() : sidebarSymbolIcon()]),
+			h('div', { class: 'flex items-center justify-center group-hover:scale-90 transition scale-100 text-inherit', style: 'width: 20px; height: 20px;' }, [sidebarSymbolIcon()]),
 			// secondary icon (for subtle hover swap)
-			h('div', { class: 'flex items-center justify-center opacity-0 scale-75 absolute inset-0 transition-all text-slate-300', style: 'width: 20px; height: 20px;' }, [state.sidebarOpen ? sidebarSymbolIcon() : closeIcon()])
+			h('div', { class: 'flex items-center justify-center opacity-0 scale-75 absolute inset-0 transition-all text-slate-300', style: 'width: 20px; height: 20px;' }, [sidebarSymbolIcon()])
 		])
 	]);
 	app.appendChild(toggleBtn);
@@ -199,6 +226,26 @@ async function onRename(id: string): Promise<void> {
 	const idx = state.sessions.findIndex((s) => s.id === id);
 	if (idx >= 0) state.sessions[idx] = updated;
 	render();
+}
+
+function getCurrentTitle(): string {
+	const s = state.sessions.find((x) => x.id === state.currentId);
+	return s?.title || 'Turodesk';
+}
+
+function menuItem(text: string, onClick: () => void): HTMLElement {
+	return h('button', { class: 'w-full text-left text-sm px-2 py-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10', onclick: onClick }, [text]);
+}
+
+function dotsIcon(): HTMLElement {
+	const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	el.setAttribute('viewBox', '0 0 24 24');
+	el.setAttribute('fill', 'currentColor');
+	el.setAttribute('class', 'w-5 h-5');
+	const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	p.setAttribute('d', 'M12 6a2 2 0 110-4 2 2 0 010 4zm0 8a2 2 0 110-4 2 2 0 010 4zm0 8a2 2 0 110-4 2 2 0 010 4z');
+	el.appendChild(p);
+	return el as unknown as HTMLElement;
 }
 
 window.addEventListener('DOMContentLoaded', () => { void boot(); });

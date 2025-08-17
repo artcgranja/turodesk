@@ -12,16 +12,12 @@ export type SidebarProps = {
 	onSearchChange: (value: string) => void | Promise<void>;
 	onRename: (id: string) => void | Promise<void>;
 	onDelete: (id: string) => void | Promise<void>;
-	// controle de abrir/fechar
-	onToggleSidebar: () => void | Promise<void>;
-	isOpen: boolean;
 };
 
 export function buildSidebar(props: SidebarProps): HTMLElement {
 	const { sessions, currentId, mode } = props;
 	const sidebar = h('div', { class: 'w-64 md:w-72 h-full shrink-0 border-r border-black/10 dark:border-white/10 p-3 pt-10 space-y-3 overflow-y-auto' });
 	const leftHeader = h('div', { class: 'flex items-center gap-2' }, [
-		buildToggleButton(props),
 		h('div', { class: 'font-medium text-sm text-slate-500 dark:text-slate-400 select-none' }, ['Conversas'])
 	]);
 	const header = h('div', { class: 'flex items-center justify-between' }, [leftHeader]);
@@ -105,26 +101,6 @@ export function buildSidebarRail(
 	});
 	rail.appendChild(list);
 	return rail;
-}
-
-function buildToggleButton(props: SidebarProps): HTMLElement {
-	const btn = h('button', {
-		class: 'inline-flex items-center justify-center relative shrink-0 select-none text-slate-400 border-transparent transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-white/10 hover:text-slate-100 h-8 w-8 rounded-md active:scale-95 group',
-		onclick: props.onToggleSidebar,
-		'aria-label': 'Sidebar',
-		'aria-expanded': String(props.isOpen),
-		'aria-haspopup': 'menu',
-		'data-testid': 'pin-sidebar-toggle',
-		'data-state': props.isOpen ? 'open' : 'closed',
-		title: 'Abrir/Fechar menu (⌘/Ctrl+B)'
-	});
-	const wrap = h('div', { class: 'relative' });
-	const primary = h('div', { class: 'flex items-center justify-center group-hover:scale-90 transition scale-100 text-inherit', style: 'width: 20px; height: 20px;' }, [props.isOpen ? svgClose() : svgSidebarSymbol()]);
-	const secondary = h('div', { class: 'flex items-center justify-center opacity-0 scale-75 absolute inset-0 transition-all text-slate-300', style: 'width: 20px; height: 20px;' }, [props.isOpen ? svgSidebarSymbol() : svgClose()]);
-	wrap.appendChild(primary);
-	wrap.appendChild(secondary);
-	btn.appendChild(wrap);
-	return btn;
 }
 
 function svgSidebarSymbol(): HTMLElement {
